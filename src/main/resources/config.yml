@@ -1,0 +1,110 @@
+# 直径は外壁を除く内側の一辺（奇数）。
+default-diameter: 11
+min-diameter: 3
+max-diameter: 49
+default-height: 9
+min-height: 3
+max-height: 30
+default-boundary-material: GLASS
+win:
+  # Winの送り先。ste: Stream To Earn、rlc: Rai Live（下の rai-live.url。状態と合図も送ります）、none: 送らない
+  sink: ste
+  retry:
+    max-attempts: 3
+  ste:
+    websocket-url: 'ws://127.0.0.1:50707'
+    send-mode: burst
+    send-interval-ms: 350
+    connect-timeout-ms: 5000
+    max-count-per-command: 1000
+    max-queued-commands: 100
+# Rai Live（win.sink: rlc のときに使用）。VPSではSSHの逆方向転送でつながる http://127.0.0.1:4180
+rai-live:
+  url: 'http://127.0.0.1:4180'
+  # 枠HP・埋め立て率・2倍タイムを確かめる間隔（tick）。変化したときだけ送ります。
+  state-interval-ticks: 5
+win-seconds: 15
+win-text: '埋め立て成功！'
+cancel-text: '妨害発生！カウント中断'
+win-color: GOLD
+cancel-color: RED
+autoreplace: true
+fireworks: true
+toplock: true
+# 標準の層は上から各3段: ダイヤ・金・鉄・エメラルド・アメジスト・銅。19段目以降はクォーツ。
+# 旧layers設定は使用しません。個別変更は /umetate layer で指定できます。
+frame-health:
+  save-interval-ticks: 40
+  enabled: true
+  max-health: 10000
+  rebuild-delay-ticks: 100
+  # 未使用（崩壊時の中身は落下させず、performance.instant-max-ms-per-tick の範囲で数tickのうちに消去します）。
+  release-blocks-per-tick: 200
+bedrock-integration:
+  valid-boundary-materials: [BEDROCK, GLASS, OAK_PLANKS, SPRUCE_PLANKS, BIRCH_PLANKS, JUNGLE_PLANKS, ACACIA_PLANKS, DARK_OAK_PLANKS, MANGROVE_PLANKS, CHERRY_PLANKS, BAMBOO_PLANKS, CRIMSON_PLANKS, WARPED_PLANKS]
+# RaiBRから移植したOBS枠HP表示。必要な場合に有効化（RaiBR既定ポートと分離）。
+obs-overlay:
+  enabled: false
+  bind-address: 127.0.0.1
+  port: 17967
+fountain:
+  blocks-per-tick: 4
+  # 連続発射に必要な blocks-per-tick × flight-ticks 以上へ自動補正します。
+  max-displays: 120
+  flight-ticks: 30
+  arc-height: 6.0
+performance:
+  # true: fill・clear・wall・layer・作成・削除・サイズ変更・クリア後の掃除を、1tickあたり下の時間まで使って
+  # 数tick（最大サイズで約0.1～0.15秒）で反映。false: max-work-ms-per-tick と changes-per-tick に従ってゆっくり反映。
+  instant-box-changes: true
+  instant-max-ms-per-tick: 20
+  # 構造変更・事前検査・保存データ取得に使う1tickの時間予算（ms）。
+  max-work-ms-per-tick: 2.0
+  changes-per-tick: 1500
+  # 外部からの変更を拾う整合性スキャン（保険）。通常の更新はイベントで即時反映されます。
+  reconcile-per-tick: 64
+effects:
+  max-active: 100
+  max-endermen: 30
+  # 箱の中のTNTブロック（alltnt など）が連鎖点火するとき、80tick（導火線1本分）の間に点火を許す上限。
+  # 超えた分は点火せずTNTブロックのまま残ります（あとで再び点火できます）。箱いっぱいのTNTが一斉に点火してサーバーが止まるのを防ぎます。
+  max-chain-tnt: 100
+  tnt-radius: 3.0
+  meteor-radius: 8.0
+  comet-radius: 2.5
+  zeus-radius: 10.0
+  blackhole-radius: 12.0
+
+# 箱の周辺にいるプレイヤーのブロック操作距離（設置・破壊共通）。0で通常、最大64。
+block-reach: 20
+
+# 箱内のブロックを砂と同じFallingBlockとして落下。
+gravity:
+  # 重力の監視・走査・生成に使う時間予算。超過分は次回へ繰り越し。
+  max-work-ms-per-tick: 2.0
+  enabled: true
+  interval-ticks: 2
+  scan-per-step: 2000
+  blocks-per-step: 256
+  max-falling-blocks: 256
+
+# RaiBRと同様に鮭の爆発でエンティティにもダメージを与える。
+salmon:
+  damage-entities: true
+
+double-time:
+  multiplier: 2
+  max-multiplier: 10
+  default-seconds: 30
+  max-seconds: 3600
+  stagger-ticks: 5
+  excluded-effects: [prison, freeze]
+  messages:
+    bossbar: '妨害{倍率}倍タイム 残り {秒}秒'
+    start-title: '妨害{倍率}倍タイム！'
+    start-subtitle: '{秒}秒間、妨害が{倍率}倍になる'
+    end-title: '妨害{倍率}倍タイム終了'
+    end-subtitle: '元に戻りました'
+  sound:
+    start: ''
+    end: ''

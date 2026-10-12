@@ -1,0 +1,24 @@
+name: RaiUmetate
+version: '2.2.1'
+main: jp.rai42.umetate.UmetatePlugin
+api-version: '26.1.2'
+description: 日本語の埋め立て妨害・噴水ブロック演出
+commands:
+  umetate:
+    description: 埋め立てゲームの操作
+    usage: /umetate help
+    permission: raiumetate.admin
+    permission-message: この操作には管理者権限が必要です。
+  win:
+    aliases: [rwin]
+    description: STEのWin増減
+    usage: /win <win|lose|status> [n]
+    permission: raiumetate.admin
+  hp:
+    description: 枠HPの操作
+    usage: /hp [reset|heal|limit]
+    permission: raiumetate.admin
+permissions:
+  raiumetate.admin:
+    description: 埋め立てゲームの作成・妨害・支援
+    default: op
