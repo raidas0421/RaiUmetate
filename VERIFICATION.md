@@ -1,3 +1,11 @@
+## 2.2.2 `timer` changes take effect at once (2026-10-12, QA only)
+
+- `/umetate timer <秒>` (1–3600): applies immediately; a running win countdown restarts from the new length.
+- `/umetate timer add <秒>`: adds or subtracts (negative allowed), result clamped to 1–3600. `/umetate timer reset`: back to config.yml `win-seconds`. Changes are not written to config.yml (restart returns to `win-seconds`); recreating the box keeps the changed length. Both accept a trailing name like other commands.
+- `umetate.state` (RaiLive) gains `winSeconds` (current win-countdown length).
+- Code: UmetateGame (`timer`/`timerAdd`/`timerReset`), UmetateCommand, WinClock, RaiLiveLink, README. These were already in commit 6640f80; this release only bumps the version (pom.xml, plugin.yml) and records it.
+- Tests: GameIntegrationTest, NameArgumentTest, RaiLiveLinkTest cover timer/add/reset and `winSeconds`. 172 tests pass (work/v222-verify.log). SHA256 EEB252AFD9C1E7F58AF5F9657B6F52980EEEEC71F7A05ECB83F5B453A15EF6C4. Not deployed to production.
+
 ## 2.2.1 `alltnt` command (2026-10-12, QA only)
 
 - `/umetate alltnt [名前]`: every solid, non-container content block becomes a plain TNT block; nothing is ignited, occupancy is unchanged (TNT is solid), no double-time copies. Runs as a box-wide edit (few ticks, ≤20 ms each).
