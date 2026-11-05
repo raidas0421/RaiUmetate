@@ -41,7 +41,7 @@ public record Settings(SizeRules sizes,
     boolean clearDragon) {
     public Settings { titles=Map.copyOf(titles); }
     public record Frame(boolean enabled,double maximum,int saveInterval,int releaseBudget,long rebuildDelay,List<String> materials,
-                        int launchPerTick,int maxFlying,int maxLaunch) {
+                        int launchPerTick,int maxFlying,boolean cracks) {
         public Frame { materials=List.copyOf(materials); }
     }
     public record DoubleTime(int maxSeconds,int maxMultiplier,int defaultSeconds,int defaultMultiplier,int stagger,List<String> excluded,Map<String,String> messages,Map<String,String> sounds) {
@@ -54,7 +54,7 @@ public record Settings(SizeRules sizes,
             Math.max(1,c.getInt("frame-health.save-interval-ticks",40)),Math.max(1,c.getInt("frame-health.release-blocks-per-tick",200)),
             Math.max(20,c.getLong("frame-health.rebuild-delay-ticks",100)),c.getStringList("bedrock-integration.valid-boundary-materials"),
             bounded(c,"frame-health.collapse.launch-per-tick",40,1,1000),bounded(c,"frame-health.collapse.max-flying",600,1,10000),
-            bounded(c,"frame-health.collapse.max-launch",3000,0,200000));
+            c.getBoolean("frame-health.cracks",true));
         var doubled=new DoubleTime(bounded(c,"double-time.max-seconds",600,1,Integer.MAX_VALUE/20),bounded(c,"double-time.max-multiplier",10,2,1000),
             c.getInt("double-time.default-seconds",30),c.getInt("double-time.multiplier",2),Math.max(0,c.getInt("double-time.stagger-ticks",5)),
             c.contains("double-time.excluded-effects")?c.getStringList("double-time.excluded-effects"):List.of("prison","freeze"),

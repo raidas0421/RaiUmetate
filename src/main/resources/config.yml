@@ -40,14 +40,15 @@ frame-health:
   rebuild-delay-ticks: 100
   # 未使用（旧設定）。
   release-blocks-per-tick: 200
-  # 枠が壊れたとき、中身を下の段から順にその場で真下へ落とします。落ちたブロックは消さずにそのまま残ります。
+  # 枠HPが減るほど、枠のブロックにひび（掘るときと同じ見た目）を濃く入れます。
+  cracks: true
+  # 枠が壊れたときだけ、中身を全部、砂のように下の段から順に真下へ落とします。落ちたブロックは消さずにそのまま残ります。
+  # 全部が着地してから rebuild-delay-ticks 後に枠を作り直します。（2.6.0で max-launch の上限は廃止）
   collapse:
     # 1tickに落とし始めるブロック数。
     launch-per-tick: 40
     # 同時に落ちている落下ブロックの上限（重くならないように待ちます）。
     max-flying: 600
-    # 1回の崩壊で落とす最大数。超えた分（上の段）は枠の再生成まで宙に残り、そのあと箱の重力で詰まります。
-    max-launch: 3000
 bedrock-integration:
   valid-boundary-materials: [BEDROCK, GLASS, OAK_PLANKS, SPRUCE_PLANKS, BIRCH_PLANKS, JUNGLE_PLANKS, ACACIA_PLANKS, DARK_OAK_PLANKS, MANGROVE_PLANKS, CHERRY_PLANKS, BAMBOO_PLANKS, CRIMSON_PLANKS, WARPED_PLANKS]
 # RaiBRから移植したOBS枠HP表示。必要な場合に有効化（RaiBR既定ポートと分離）。

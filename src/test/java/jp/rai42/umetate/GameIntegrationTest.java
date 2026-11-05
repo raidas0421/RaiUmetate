@@ -396,6 +396,8 @@ class GameIntegrationTest {
         try(var f=new FrameHealthTest.Fixture(directory,10000)) {
             Box box=Box.restored(0,0,0,2,3);var game=spy(game(f,box));empty(f,box);
             doReturn(mock(org.bukkit.entity.BlockDisplay.class)).when(game).display(any(org.bukkit.Location.class),any(Material.class),anyFloat());
+            // The count below must not depend on wall-clock speed: slow mocks on a busy PC can use up the default 20 ms tick budget.
+            f.plugin.getConfig().set("performance.instant-max-ms-per-tick",1000);game.reloadSettings();
             game.add(100,false);invoke(game,"fountainTick");game.add(100,true);invoke(game,"directTick");
             assertEquals(23,((FillState)get(game,"fill")).filled());assertEquals(4,((java.util.List<?>)get(game,"flights")).size());
             for(int i=0;i<31;i++)invoke(game,"fountainTick");

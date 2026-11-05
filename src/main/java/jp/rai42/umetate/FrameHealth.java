@@ -50,6 +50,15 @@ public final class FrameHealth implements Listener {
    private String lastTitle="";
    private double lastProgress=-1;
    private BarColor lastColor;
+   /** Crack overlay ids sit far below real entity ids; each frame block needs its own id or the client shows only one. */
+   static final int CRACK_ID_BASE=-0x40000000;
+   /** The client forgets a crack after 400 ticks; resend well before that. */
+   static final int CRACK_RESEND_TICKS=200;
+   private List<Block> crackBlocks=List.of();
+   private int[] crackStages=new int[0];
+   private String crackSignature="";
+   private int crackAge;
+   private final Set<UUID> crackViewers=new HashSet<>();
 
    FrameHealth(JavaPlugin plugin, FrameArena monitor) {
       this.plugin = plugin; this.monitor = monitor;
@@ -102,6 +111,7 @@ public final class FrameHealth implements Listener {
       bar.setVisible(settings.enabled());
       for (Player p : new ArrayList<>(bar.getPlayers())) if (!p.isOnline() || !p.getWorld().equals(b.world())) bar.removePlayer(p);
       for (Player p : b.world().getPlayers()) if (!bar.getPlayers().contains(p)) bar.addPlayer(p);
+      updateCracks(b,10);
    }
    /** Switches to b; HP carries over only when the same box was resized, any other arena starts full. */
    private void adoptArena(ArenaBounds b) {
@@ -127,6 +137,76 @@ public final class FrameHealth implements Listener {
       if(!title.equals(lastTitle)){bar.setTitle(title);lastTitle=title;}
       if(progress!=lastProgress){bar.setProgress(progress);lastProgress=progress;}
       if(color!=lastColor){bar.setColor(color);lastColor=color;}
+   }
+   /** Crack stage 0-9 for one frame block, or -1 for none. Each block starts cracking at its own point so the frame does not crack uniformly. */
+   static int crackStage(double hp,double max,int x,int y,int z) {
+      double lost=1-Math.max(0,Math.min(1,hp/max));
+      if(lost<=0)return -1;
+      double p=lost*1.15-crackNoise(x,y,z)*.15;
+      if(p<=0)return -1;
+      return Math.min(9,(int)(p*10));
+   }
+   static double crackNoise(int x,int y,int z) {
+      long h=x*73856093L^y*19349663L^z*83492791L;
+      h^=h>>>13;h*=0x5bd1e995L;h^=h>>>15;
+      return (h&0xffff)/65536.0;
+   }
+   /** Paper maps progress to stage with (int)(9*progress) and clears at exactly 0. */
+   static float crackProgress(int stage) { return stage<0?0f:Math.min(1f,(stage+.5f)/9f); }
+   /** Sends the crack overlay only for blocks whose stage changed, plus a periodic resend so the client keeps it. */
+   private void updateCracks(ArenaBounds b,int elapsed) {
+      boolean enabled=settings.enabled() && settings.cracks() && !collapsing;
+      String sig=signature(b);
+      crackAge+=elapsed;
+      boolean resend=crackAge>=CRACK_RESEND_TICKS;
+      if(!enabled) { clearCracks(); return; }
+      if(!sig.equals(crackSignature) || resend) {
+         List<Block> found=boundaryFrameBlocks(b);
+         if(!sig.equals(crackSignature) || !found.equals(crackBlocks)) {
+            clearCracks();crackBlocks=found;crackStages=new int[found.size()];Arrays.fill(crackStages,-1);crackSignature=sig;
+         }
+      }
+      if(resend)crackAge=0;
+      List<Player> viewers=b.world().getPlayers();
+      Set<UUID> now=new HashSet<>();
+      for(Player p:viewers)now.add(p.getUniqueId());
+      crackViewers.retainAll(now);
+      for(int i=0;i<crackBlocks.size();i++) {
+         Block block=crackBlocks.get(i);
+         int stage=crackStage(hp,maximum(),block.getX(),block.getY(),block.getZ());
+         boolean changed=stage!=crackStages[i];
+         if(!changed && stage<0)continue;
+         Location at=block.getLocation();
+         for(Player p:viewers) {
+            if(changed || resend || !crackViewers.contains(p.getUniqueId())) p.sendBlockDamage(at,crackProgress(stage),CRACK_ID_BASE+i);
+         }
+         crackStages[i]=stage;
+      }
+      crackViewers.addAll(now);
+   }
+   /** Removes every crack this plugin is showing (collapse, rebuild, arena change). */
+   private void clearCracks() {
+      if(crackBlocks.isEmpty())return;
+      World w=crackBlocks.getFirst().getWorld();
+      List<Player> viewers=w==null?List.of():w.getPlayers();
+      for(int i=0;i<crackBlocks.size();i++) {
+         if(crackStages[i]<0)continue;
+         Location at=crackBlocks.get(i).getLocation();
+         for(Player p:viewers)p.sendBlockDamage(at,0f,CRACK_ID_BASE+i);
+         crackStages[i]=-1;
+      }
+   }
+   /** Frame blocks on the floor and the four walls only, without walking the inside of the box. */
+   private List<Block> boundaryFrameBlocks(ArenaBounds b) {
+      List<Block> found=new ArrayList<>();
+      for(int x=b.minX();x<=b.maxX();x++) for(int z=b.minZ();z<=b.maxZ();z++) {
+         boolean wall=x==b.minX() || x==b.maxX() || z==b.minZ() || z==b.maxZ();
+         for(int y=b.floorY();y<=(wall?b.topY():b.floorY());y++) {
+            Block block=b.world().getBlockAt(x,y,z);
+            if(frameMaterial(block))found.add(block);
+         }
+      }
+      return found;
    }
    private boolean boundary(ArenaBounds b, int x, int y, int z) {
       return x>=b.minX() && x<=b.maxX() && z>=b.minZ() && z<=b.maxZ() && y>=b.floorY() && y<=b.topY()
@@ -257,7 +337,7 @@ public final class FrameHealth implements Listener {
       if(!signature(b).equals(signature)) adoptArena(b);
       hp=Math.max(0,hp-damage);
       lastDamage=damage;revision++;publish();
-      if(hp==0) beginCollapse(b); else save();
+      if(hp==0) beginCollapse(b); else { save(); updateCracks(b,0); }
       updateDisplay();
    }
    private List<Block> frameBlocks(ArenaBounds b) {
@@ -267,7 +347,7 @@ public final class FrameHealth implements Listener {
       return blocks;
    }
    private void beginCollapse(ArenaBounds b) {
-      collapsing=true;collapseBounds=b;
+      collapsing=true;collapseBounds=b;clearCracks();
       publish();
       for(Block block:frameBlocks(b)) savedFrame.put(block.getX()+","+block.getY()+","+block.getZ(),block.getBlockData().getAsString());
       collapseCheckpoint=saveNow();
@@ -297,33 +377,34 @@ public final class FrameHealth implements Listener {
          block.setType(Material.AIR,true);
       }
       b.world().playSound(b.topCenter(),"minecraft:block.glass.break",3,1);
-      // Contents drop straight down as falling blocks and stay wherever they land.
+      // Only a collapse uses sand-like falling blocks: all contents drop straight down and stay wherever they land.
       // Bottom layer first: a falling block with a solid block under it re-lands in the cell it just left.
       // Launches are spread over ticks and capped in flight: the whole box at once kept the server at ~15 TPS for ~15 s.
-      int[] cursor={b.innerMinX(),b.innerMinY(),b.innerMinZ()};int[] launched={0};
+      int[] cursor={b.innerMinX(),b.innerMinY(),b.innerMinZ()};int[] settling={0};
       List<FallingBlock> flying=new ArrayList<>();
       var air=Bukkit.createBlockData(Material.AIR);
       releaseTask=Bukkit.getScheduler().runTaskTimer(plugin,()->{
          if(!sameArena(b)){abortCollapse();return;}
          flying.removeIf(e->!e.isValid());
          long deadline=System.nanoTime()+releaseNanos;int now=0;
-         while(cursor[1]<=b.innerMaxY() && launched[0]<settings.maxLaunch() && now<settings.launchPerTick()
+         while(cursor[1]<=b.innerMaxY() && now<settings.launchPerTick()
                && flying.size()<settings.maxFlying() && System.nanoTime()<deadline) {
             Block block=b.world().getBlockAt(cursor[0],cursor[1],cursor[2]);
             Material type=block.getType();
             if(!type.isAir() && !block.isLiquid() && !(tileGuard.isTile(type))) {
-               flying.add(drop(block));block.setBlockData(air,false);launched[0]++;now++;
+               flying.add(drop(block));block.setBlockData(air,false);now++;
             }
             if(++cursor[0]>b.innerMaxX()){cursor[0]=b.innerMinX();if(++cursor[2]>b.innerMaxZ()){cursor[2]=b.innerMinZ();cursor[1]++;}}
          }
-         // Past the cap the upper layers stay put until the rebuilt box's gravity settles them.
-         if(cursor[1]>b.innerMaxY() || launched[0]>=settings.maxLaunch()) {
+         // Everything is dropped (no cap since 2.6.0); rebuild once it has landed, or after 10 s if something never lands.
+         if(cursor[1]>b.innerMaxY() && (flying.isEmpty() || ++settling[0]>COLLAPSE_SETTLE_TICKS)) {
             releaseTask.cancel();releaseTask=null;
             long delay=settings.rebuildDelay();
             rebuildTask=Bukkit.getScheduler().runTaskLater(plugin,this::restoreFrame,delay);
          }
       },1,1);
    }
+   static final int COLLAPSE_SETTLE_TICKS=200;
    /** Lets one block fall straight down; it lands as a real block and is never cleaned up. */
    private FallingBlock drop(Block block) {
       BlockData data=block.getBlockData();
@@ -339,11 +420,12 @@ public final class FrameHealth implements Listener {
          collapseBounds.world().getBlockAt(Integer.parseInt(p[0]),Integer.parseInt(p[1]),Integer.parseInt(p[2])).setBlockData(Bukkit.createBlockData(entry.getValue()),true);
       }
       savedFrame.clear();collapsing=false;hp=maximum();lastDamage=0;revision++;publish();saveNow();
+      crackSignature="";
       monitor.frameRestored();
    }
    private void abortCollapse() {
       if(releaseTask!=null)releaseTask.cancel();if(rebuildTask!=null)rebuildTask.cancel();
-      releaseTask=null;rebuildTask=null;collapsing=false;savedFrame.clear();hp=maximum();lastDamage=0;revision++;publish();saveNow();
+      releaseTask=null;rebuildTask=null;collapsing=false;savedFrame.clear();clearCracks();hp=maximum();lastDamage=0;revision++;publish();saveNow();
    }
    private void save(){dirty=true;}
    private java.util.concurrent.CompletableFuture<Void> saveNow() {
@@ -388,14 +470,14 @@ public final class FrameHealth implements Listener {
    }
    void clearArena() {
       if(collapsing)throw new IllegalStateException("枠の再生成中です。");
-      signature="";savedFrame.clear();pendingTnt.clear();hp=maximum();lastDamage=0;arenaAvailable=false;revision++;publish();save();
+      clearCracks();signature="";savedFrame.clear();pendingTnt.clear();hp=maximum();lastDamage=0;arenaAvailable=false;revision++;publish();save();
       if(bar!=null){bar.removeAll();bar.setVisible(false);}
    }
    public void stop() {
       if(stopped)return;stopped=true;
       if(displayTask!=null)displayTask.cancel();if(releaseTask!=null)releaseTask.cancel();if(rebuildTask!=null)rebuildTask.cancel();
       if(saveTask!=null)saveTask.cancel();
-      if(collapsing && !saveFailed)restoreFrame();saveNow();store.close();saveTick();if(bar!=null)bar.removeAll();
+      clearCracks();if(collapsing && !saveFailed)restoreFrame();saveNow();store.close();saveTick();if(bar!=null)bar.removeAll();
    }
    private void publish() {
       overlayHealth=hp;overlayMaximum=maximum();

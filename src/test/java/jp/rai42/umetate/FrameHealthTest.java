@@ -91,6 +91,9 @@ class FrameHealthTest {
             verify(thrown).addScoreboardTag(FrameHealth.FALLING_TAG);
             verify(thrown).setDropItem(false);
             verify(thrown,never()).setVelocity(any());
+            // The frame is rebuilt only after everything has landed.
+            assertTrue(f.delayed.isEmpty());
+            when(thrown.isValid()).thenReturn(false); release.action().run();
             Scheduled rebuild = f.delayed.removeFirst(); assertEquals(100, rebuild.delay());
             assertTrue(f.health.isCollapsing()); rebuild.action().run();
             assertFalse(f.health.isCollapsing()); assertEquals(10, f.health.snapshot().health());
@@ -110,6 +113,87 @@ class FrameHealthTest {
             assertEquals(2, f.falling.size());
             assertEquals(Material.DIAMOND_BLOCK, f.falling.get(0).getBlockData().getMaterial());
             assertEquals(Material.EMERALD_BLOCK, f.falling.get(1).getBlockData().getMaterial());
+        }
+    }
+    @Test void collapseDropsEverythingWithoutACap() {
+        try (Fixture f = new Fixture(directory, 10)) {
+            f.plugin.getConfig().set("frame-health.collapse.launch-per-tick",10);
+            f.health.reloadSettings(Settings.read(f.plugin.getConfig()));
+            // 5x5x3 inside = 75 blocks, several ticks of launch budget.
+            for (int x=-3;x<=3;x++) for (int y=0;y<=4;y++) for (int z=-3;z<=3;z++)
+                f.types.put(new Box.Cell(x,y,z), y==0||x==-3||x==3||z==-3||z==3 ? Material.BEDROCK : y<=3 ? Material.QUARTZ_BLOCK : Material.AIR);
+            var wide = new ArenaBounds(f.world,-3,3,0,4,-3,3,"RADIUS",2,3);
+            when(f.arena.current()).thenReturn(java.util.Optional.of(wide));
+            f.health.refresh();
+            f.health.command(f.console,new String[]{"hp","heal","-10"}); assertTrue(f.health.isCollapsing());
+            f.awaitCheckpoint();f.delayed.removeFirst().action().run();
+            var release = f.timers.stream().filter(t -> t.period() == 1).toList().getLast();
+            for (int i = 0; i < 20; i++) release.action().run();
+            assertEquals(75, f.falling.size());
+            for (int x=-2;x<=2;x++) for (int y=1;y<=3;y++) for (int z=-2;z<=2;z++) assertEquals(Material.AIR, f.types.get(new Box.Cell(x,y,z)));
+            // Rebuild waits for the landing, but something that never lands does not hold it forever.
+            assertTrue(f.delayed.isEmpty());
+            int runs=0;
+            while (f.delayed.isEmpty() && runs < 500) { release.action().run(); runs++; }
+            assertEquals(1, f.delayed.size());
+            assertTrue(runs > 150);
+        }
+    }
+    @Test void crackStageGrowsWithLostHealth() {
+        for (int x=-3;x<=3;x++) for (int y=0;y<=3;y++) {
+            assertEquals(-1, FrameHealth.crackStage(100,100,x,y,0));
+            int previous=-1;
+            for (int hp=100;hp>=0;hp-=5) {
+                int stage=FrameHealth.crackStage(hp,100,x,y,0);
+                assertTrue(stage>=previous && stage<=9);previous=stage;
+            }
+            assertEquals(9, previous);
+            assertTrue(FrameHealth.crackStage(50,100,x,y,0)>=3);
+        }
+        for (int stage=0;stage<=9;stage++) assertEquals(stage,(int)(9*FrameHealth.crackProgress(stage)));
+        assertEquals(0f, FrameHealth.crackProgress(-1));
+    }
+    @Test void damagedFrameShowsCracksAndHealingClearsThem() {
+        try (Fixture f = new Fixture(directory, 100)) {
+            org.bukkit.entity.Player viewer = mock(org.bukkit.entity.Player.class);
+            when(viewer.getUniqueId()).thenReturn(UUID.randomUUID());
+            when(f.world.getPlayers()).thenReturn(List.of(viewer));
+            f.health.refresh();
+            verify(viewer,never()).sendBlockDamage(any(Location.class),anyFloat(),anyInt());
+            f.health.customExplosion(f.origin,4); f.health.customExplosion(f.origin,4);
+            var ids = new HashSet<Integer>();
+            var captor = org.mockito.ArgumentCaptor.forClass(Integer.class);
+            verify(viewer,atLeastOnce()).sendBlockDamage(any(Location.class),floatThat(p -> p > 0),captor.capture());
+            ids.addAll(captor.getAllValues());
+            assertTrue(ids.size() > 1, "each frame block needs its own crack id");
+            clearInvocations(viewer);
+            f.health.command(f.console,new String[]{"hp","reset"}); f.health.refresh();
+            verify(viewer,atLeastOnce()).sendBlockDamage(any(Location.class),eq(0f),anyInt());
+            verify(viewer,never()).sendBlockDamage(any(Location.class),floatThat(p -> p > 0),anyInt());
+        }
+    }
+    @Test void collapseClearsCracks() {
+        try (Fixture f = new Fixture(directory, 100)) {
+            org.bukkit.entity.Player viewer = mock(org.bukkit.entity.Player.class);
+            when(viewer.getUniqueId()).thenReturn(UUID.randomUUID());
+            when(f.world.getPlayers()).thenReturn(List.of(viewer));
+            for (int i = 0; i < 3; i++) f.health.customExplosion(f.origin,4);
+            verify(viewer,atLeastOnce()).sendBlockDamage(any(Location.class),floatThat(p -> p > 0),anyInt());
+            clearInvocations(viewer);
+            f.health.command(f.console,new String[]{"hp","heal","-10"}); assertTrue(f.health.isCollapsing());
+            verify(viewer,atLeastOnce()).sendBlockDamage(any(Location.class),eq(0f),anyInt());
+            verify(viewer,never()).sendBlockDamage(any(Location.class),floatThat(p -> p > 0),anyInt());
+        }
+    }
+    @Test void cracksCanBeTurnedOff() {
+        try (Fixture f = new Fixture(directory, 100)) {
+            f.plugin.getConfig().set("frame-health.cracks",false);
+            f.health.reloadSettings(Settings.read(f.plugin.getConfig()));
+            org.bukkit.entity.Player viewer = mock(org.bukkit.entity.Player.class);
+            when(viewer.getUniqueId()).thenReturn(UUID.randomUUID());
+            when(f.world.getPlayers()).thenReturn(List.of(viewer));
+            f.health.customExplosion(f.origin,4); f.health.refresh();
+            verify(viewer,never()).sendBlockDamage(any(Location.class),floatThat(p -> p > 0),anyInt());
         }
     }
     @Test void containersAreExcludedFromFallingConversion() {
