@@ -157,22 +157,52 @@ class GameIntegrationTest {
             assertFalse(game.busy());
         }
     }
-    @Test void gravityUsesNativeFallingBlockAndNormalizesOnLanding() throws Exception {
+    @Test void gravityMovesBlockInstantlyAndNormalizesOnLanding() throws Exception {
         try(var f=new FrameHealthTest.Fixture(directory,10000)) {
             Box box=Box.restored(0,0,0,2,4); UmetateGame game=game(f,box); empty(f,box);
             f.types.put(new Box.Cell(0,4,0),Material.DIAMOND_BLOCK);
-            invoke(game,"reconcileAll"); gravityUntil(game,f,1);
-            assertEquals(1,f.falling.size()); var entity=f.falling.getFirst();
-            verify(entity).setGravity(true); verify(entity).setDropItem(false); verify(entity).setHurtEntities(false);
-            verify(entity).setPersistent(true); verify(entity).shouldAutoExpire(false);
+            invoke(game,"reconcileAll"); invoke(game,"gravityTick");
+            assertTrue(f.falling.isEmpty());
             assertEquals(Material.AIR,f.types.get(new Box.Cell(0,4,0)));
-            assertEquals(0,((FillState)get(game,"fill")).filled());
-            var landing=mock(org.bukkit.event.entity.EntityChangeBlockEvent.class);
-            when(landing.getEntity()).thenReturn(entity); var target=f.block(0,1,0); when(landing.getBlock()).thenReturn(target);
-            game.entityChange(landing); verify(landing).setCancelled(true); verify(entity).remove();
             assertEquals(Material.GOLD_BLOCK,f.types.get(new Box.Cell(0,1,0)));
             assertEquals(1,((FillState)get(game,"fill")).filled());
-            game.entityChange(landing); assertEquals(1,((FillState)get(game,"fill")).filled());
+        }
+    }
+    @Test void gravityCompactsWholeStackAcrossGapsInOneStepWithoutAutoreplace() throws Exception {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,6); UmetateGame game=game(f,box); empty(f,box);
+            game.toggle("autoreplace");when(f.world.getMaxHeight()).thenReturn(320);
+            f.types.put(new Box.Cell(0,3,0),Material.DIAMOND_BLOCK);f.types.put(new Box.Cell(0,4,0),Material.EMERALD_BLOCK);f.types.put(new Box.Cell(0,6,0),Material.IRON_BLOCK);
+            invoke(game,"reconcileAll"); invoke(game,"gravityTick");
+            assertEquals(Material.DIAMOND_BLOCK,f.types.get(new Box.Cell(0,1,0)));
+            assertEquals(Material.EMERALD_BLOCK,f.types.get(new Box.Cell(0,2,0)));
+            assertEquals(Material.IRON_BLOCK,f.types.get(new Box.Cell(0,3,0)));
+            for(int y=4;y<=6;y++)assertEquals(Material.AIR,f.types.get(new Box.Cell(0,y,0)));
+            assertEquals(3,((FillState)get(game,"fill")).filled());assertEquals(6,game.spawnY());
+        }
+    }
+    @Test void gravityStopsAtChestsAndKeepsTntAsTnt() throws Exception {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,5); UmetateGame game=game(f,box); empty(f,box);
+            f.types.put(new Box.Cell(0,2,0),Material.TNT);f.types.put(new Box.Cell(0,3,0),Material.CHEST);f.types.put(new Box.Cell(0,4,0),Material.DIAMOND_BLOCK);
+            invoke(game,"reconcileAll"); gravitySettle(game);
+            assertEquals(Material.TNT,f.types.get(new Box.Cell(0,1,0)));
+            assertEquals(Material.AIR,f.types.get(new Box.Cell(0,2,0)));
+            assertEquals(Material.CHEST,f.types.get(new Box.Cell(0,3,0)));
+            assertEquals(Material.DIAMOND_BLOCK,f.types.get(new Box.Cell(0,4,0)));
+        }
+    }
+    @Test void gravityNeverLandsOnAStaleOccupiedCell() throws Exception {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,4); UmetateGame game=game(f,box); empty(f,box);
+            game.toggle("autoreplace");
+            f.types.put(new Box.Cell(0,4,0),Material.DIAMOND_BLOCK);invoke(game,"reconcileAll");
+            // The cache still says this cell is free when the column drops.
+            f.types.put(new Box.Cell(0,1,0),Material.EMERALD_BLOCK);
+            invoke(game,"gravityTick");
+            assertEquals(Material.EMERALD_BLOCK,f.types.get(new Box.Cell(0,1,0)));
+            assertEquals(Material.DIAMOND_BLOCK,f.types.get(new Box.Cell(0,2,0)));
+            assertEquals(2,((FillState)get(game,"fill")).filled());
         }
     }
     @Test void gravityWaitsForFountainSupportAndPreservesContainers() throws Exception {
@@ -181,40 +211,40 @@ class GameIntegrationTest {
             f.types.put(box.cell(9),Material.DIAMOND_BLOCK); f.types.put(box.cell(10),Material.CHEST);
             var cell=box.cell(10); var chest=f.block(cell.x(),cell.y(),cell.z()); f.types.put(new Box.Cell(chest.getX(),chest.getY(),chest.getZ()),Material.CHEST);
             FillState fill=(FillState)get(game,"fill"); invoke(game,"reconcileAll");fill.enqueue(1);assertEquals(0,fill.reserve());
-            invoke(game,"gravityTick"); assertTrue(f.falling.isEmpty());
-            fill.cancelPending(); gravityUntil(game,f,1); assertEquals(1,f.falling.size());
-            assertEquals(Material.CHEST,f.types.get(box.cell(10)));
+            invoke(game,"gravityTick"); assertEquals(Material.DIAMOND_BLOCK,f.types.get(box.cell(9)));
+            fill.cancelPending(); gravitySettle(game); assertEquals(Material.AIR,f.types.get(box.cell(9)));
+            assertNotEquals(Material.AIR,f.types.get(box.cell(0)));
+            assertEquals(Material.CHEST,f.types.get(box.cell(10)));assertTrue(f.falling.isEmpty());
         }
     }
     @Test void gravityRestoresAirborneBlocksBeforeShutdownOrResizeCleanup() throws Exception {
         try(var f=new FrameHealthTest.Fixture(directory,10000)) {
             Box box=Box.restored(0,0,0,2,3); UmetateGame game=game(f,box);empty(f,box);
-            f.types.put(box.cell(18),Material.DIAMOND_BLOCK);f.types.put(box.cell(19),Material.DIAMOND_BLOCK);invoke(game,"reconcileAll");
-            gravityUntil(game,f,2);assertEquals(2,f.falling.size());
+            var first=recovered(game,f,box.cell(18),Material.DIAMOND_BLOCK);var second=recovered(game,f,box.cell(19),Material.DIAMOND_BLOCK);
             invoke(game,"cleanupEffects");
             assertEquals(Material.DIAMOND_BLOCK,f.types.get(box.cell(18)));
             assertEquals(Material.DIAMOND_BLOCK,f.types.get(box.cell(19)));
             assertEquals(2,((FillState)get(game,"fill")).filled());
-            for(var entity:f.falling) verify(entity).remove();
+            verify(first).remove();verify(second).remove();
         }
     }
     @Test void nativeGravityLandingNeverOverwritesAnOccupiedTarget() throws Exception {
         try(var f=new FrameHealthTest.Fixture(directory,10000)) {
             Box box=Box.restored(0,0,0,2,2); UmetateGame game=game(f,box);empty(f,box);
-            f.types.put(box.cell(9),Material.DIAMOND_BLOCK);invoke(game,"reconcileAll");gravityUntil(game,f,1);
-            var entity=f.falling.getFirst();var target=f.block(-1,1,-1);f.types.put(box.cell(0),Material.CHEST);
+            var entity=recovered(game,f,box.cell(9),Material.DIAMOND_BLOCK);var target=f.block(-1,1,-1);f.types.put(box.cell(0),Material.CHEST);
             var landing=mock(org.bukkit.event.entity.EntityChangeBlockEvent.class);when(landing.getEntity()).thenReturn(entity);when(landing.getBlock()).thenReturn(target);
             game.entityChange(landing);
             assertEquals(Material.CHEST,f.types.get(box.cell(0)));assertEquals(Material.DIAMOND_BLOCK,f.types.get(box.cell(9)));
         }
     }
-    @Test void nativeGravityIsBoundedAndCanBeDisabled() throws Exception {
+    @Test void gravityIsBoundedAndCanBeDisabled() throws Exception {
         try(var f=new FrameHealthTest.Fixture(directory,10000)) {
             Box box=Box.restored(0,0,0,2,3);UmetateGame game=game(f,box);empty(f,box);
             for(int i=18;i<27;i++)f.types.put(box.cell(i),Material.DIAMOND_BLOCK);invoke(game,"reconcileAll");
-            f.plugin.getConfig().set("gravity.enabled",false);game.reloadSettings();invoke(game,"gravityTick");assertTrue(f.falling.isEmpty());
-            f.plugin.getConfig().set("gravity.enabled",true);game.reloadSettings();f.plugin.getConfig().set("gravity.max-falling-blocks",2);game.reloadSettings();
-            gravityUntil(game,f,2);assertEquals(2,f.falling.size());gravityUntil(game,f,2);assertEquals(2,f.falling.size());
+            f.plugin.getConfig().set("gravity.enabled",false);game.reloadSettings();invoke(game,"gravityTick");assertEquals(9,floating(f,box,18,27));
+            f.plugin.getConfig().set("gravity.enabled",true);f.plugin.getConfig().set("gravity.blocks-per-step",2);game.reloadSettings();
+            int left=9;for(int i=0;i<300 && left>0;i++){invoke(game,"gravityTick");int now=floating(f,box,18,27);assertTrue(left-now<=2);left=now;}assertEquals(0,left);
+            assertTrue(f.falling.isEmpty());
         }
     }
     @Test void fillAcceptsExcessLayersQuietlyAndAllDoesNotDuplicateQueue() throws Exception {
@@ -396,7 +426,7 @@ class GameIntegrationTest {
             f.types.put(new Box.Cell(0,6,0),Material.DIAMOND_BLOCK);invoke(game,"reconcileAll");assertEquals(9,game.spawnY());
             when(f.world.spawn(any(org.bukkit.Location.class),eq(org.bukkit.entity.Salmon.class))).thenReturn(mock(org.bukkit.entity.Salmon.class));
             game.salmon(1,5,3,"");verify(f.world).spawn(argThat((org.bukkit.Location at)->at.getY()==9),eq(org.bukkit.entity.Salmon.class));
-            gravityUntil(game,f,1);assertEquals(3,game.spawnY());
+            invoke(game,"gravityTick");assertEquals(4,game.spawnY());
             var roof=new java.util.LinkedHashMap<Box.Cell,org.bukkit.block.data.BlockData>();for(var c:BedrockLid.cells(box))roof.put(c,f.data(Material.AIR));
             set(game,"lid",new BedrockLid<org.bukkit.block.data.BlockData>(box,10,roof));assertEquals(11,game.spawnY());
         }
@@ -467,8 +497,9 @@ class GameIntegrationTest {
             update.setAccessible(true);update.invoke(game,f.block(cell.x(),cell.y(),cell.z()));
             set(game,"tick",1);f.plugin.getConfig().set("gravity.interval-ticks",20);game.reloadSettings();
             invoke(game,"gravityTick");
-            assertEquals(1,f.falling.size());
+            assertTrue(f.falling.isEmpty());
             assertEquals(Material.AIR,f.types.get(box.cell(support+box.width()*box.width())));
+            assertNotEquals(Material.AIR,f.types.get(cell));
         }
     }
     @Test void supportedBlocksDoNotAllocateBlockStateSnapshots() throws Exception {
@@ -479,19 +510,19 @@ class GameIntegrationTest {
             assertTrue(f.falling.isEmpty());
         }
     }
-    @Test void expensiveGravitySpawnsYieldAndEventuallyResume() throws Exception {
+    @Test void expensiveGravityMovesYieldAndEventuallyResume() throws Exception {
         try(var f=new FrameHealthTest.Fixture(directory,10000)) {
             Box box=Box.restored(0,0,0,4,3);var game=game(f,box);empty(f,box);
             for(int i=98;i<147;i++)f.types.put(box.cell(i),Material.DIAMOND_BLOCK);invoke(game,"reconcileAll");
-            var perStep=new java.util.concurrent.atomic.AtomicInteger();
-            when(f.world.spawnFallingBlock(any(org.bukkit.Location.class),any(org.bukkit.block.data.BlockData.class))).thenAnswer(call->{
-                perStep.incrementAndGet();Thread.sleep(3);var entity=mock(org.bukkit.entity.FallingBlock.class);
-                when(entity.isValid()).thenReturn(true);when(entity.getLocation()).thenReturn(call.getArgument(0));
-                f.falling.add(entity);return entity;
+            when(f.world.getBlockAt(anyInt(),anyInt(),anyInt())).thenAnswer(call->{
+                Thread.sleep(3);return f.block(call.getArgument(0),call.getArgument(1),call.getArgument(2));
             });
-            invoke(game,"gravityTick");assertTrue(perStep.get()<=10,"1回の重力処理で生成が集中: "+perStep.get());
-            for(int i=0;i<300 && f.falling.size()<49;i++){perStep.set(0);invoke(game,"gravityTick");assertTrue(perStep.get()<=10);}
-            assertEquals(49,f.falling.size());
+            int left=49;
+            for(int i=0;i<300 && left>0;i++){
+                invoke(game,"gravityTick");int now=floating(f,box,98,147);
+                assertTrue(left-now<=10,"1回の重力処理で移動が集中: "+(left-now));left=now;
+            }
+            assertEquals(0,left);
         }
     }
     @Test void crowdedGravityLandingDoesNotScanEntireArena() throws Exception {
@@ -506,9 +537,84 @@ class GameIntegrationTest {
             assertTrue(((FillState)get(game,"fill")).full());
         }
     }
-    private static void gravityUntil(UmetateGame game,FrameHealthTest.Fixture f,int count)throws Exception {
-        for(int i=0;i<300 && f.falling.size()<count;i++)invoke(game,"gravityTick");
-        assertEquals(count,f.falling.size());
+    private static void gravitySettle(UmetateGame game)throws Exception {
+        for(int i=0;i<300;i++)invoke(game,"gravityTick");
+    }
+    private static int floating(FrameHealthTest.Fixture f,Box box,int from,int to) {
+        return (int)java.util.stream.IntStream.range(from,to).filter(i->f.types.get(box.cell(i))==Material.DIAMOND_BLOCK).count();
+    }
+    /** A falling entity saved by a version before instant gravity, picked up again from its source cell. */
+    private static org.bukkit.entity.FallingBlock recovered(UmetateGame game,FrameHealthTest.Fixture f,Box.Cell source,Material material)throws Exception {
+        var entity=mock(org.bukkit.entity.FallingBlock.class);var data=f.data(material);
+        when(entity.getWorld()).thenReturn(f.world);when(entity.getBlockData()).thenReturn(data);
+        when(entity.getSourceLoc()).thenReturn(new org.bukkit.Location(f.world,source.x(),source.y(),source.z()));
+        when(entity.getScoreboardTags()).thenReturn(java.util.Set.of("rai_umetate_gravity"));
+        var recover=UmetateGame.class.getDeclaredMethod("recoverGravity",org.bukkit.entity.Entity.class);recover.setAccessible(true);recover.invoke(game,entity);
+        return entity;
+    }
+    @Test void winningKeepsTntBlocksAndLitTntWhileClearingTheRest() throws Exception {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,3);var game=spy(game(f,box));empty(f,box);
+            var lit=mock(org.bukkit.entity.TNTPrimed.class);when(lit.isValid()).thenReturn(true);when(lit.getLocation()).thenReturn(new org.bukkit.Location(f.world,.5,3,.5));
+            doReturn(lit).when(game).primed(any(org.bukkit.Location.class),anyInt());
+            f.types.put(box.cell(0),Material.DIAMOND_BLOCK);f.types.put(box.cell(1),Material.TNT);f.types.put(box.cell(10),Material.TNT);
+            invoke(game,"reconcileAll");game.tnt(1,4,"","強化TNT");
+            invoke(game,"completeRound");
+            // Checked before draining: the kept bomb goes off on schedule once the round restarts.
+            verify(lit,never()).remove();assertEquals(1,((java.util.List<?>)get(game,"bombs")).size());
+            set(game,"bombs",new java.util.ArrayList<>());drainChanges(game);
+            assertEquals(Material.AIR,f.types.get(box.cell(0)));
+            assertEquals(Material.TNT,f.types.get(box.cell(1)));assertEquals(Material.TNT,f.types.get(box.cell(10)));
+            assertEquals(2,((FillState)get(game,"fill")).filled());
+        }
+    }
+    @Test void instantClearStillRemovesTntBlocksAndLitTnt() throws Exception {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,3);var game=spy(game(f,box));empty(f,box);
+            var lit=mock(org.bukkit.entity.TNTPrimed.class);when(lit.isValid()).thenReturn(true);when(lit.getLocation()).thenReturn(new org.bukkit.Location(f.world,.5,3,.5));
+            doReturn(lit).when(game).primed(any(org.bukkit.Location.class),anyInt());
+            f.types.put(box.cell(1),Material.TNT);invoke(game,"reconcileAll");game.tnt(1,4,"","強化TNT");
+            game.clearNow();drainChanges(game);
+            assertEquals(Material.AIR,f.types.get(box.cell(1)));verify(lit).remove();
+            assertTrue(((java.util.List<?>)get(game,"bombs")).isEmpty());
+        }
+    }
+    @Test void dragonClearRemovesColumnsAsItPassesWithoutBlockingOtherCommands() throws Exception {
+        try (var f = new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,3,2); UmetateGame game=game(f,box);
+            for(int i=0;i<box.capacity();i++) f.types.put(box.cell(i),Material.DIAMOND_BLOCK);
+            invoke(game,"reconcileAll");drainChanges(game);
+            assertEquals(box.capacity(),((FillState)get(game,"fill")).filled());
+            game.clear(true,"太郎");
+            assertTrue(game.dragonClearing()); assertFalse(game.busy());
+            verify(f.world).spawn(any(org.bukkit.Location.class),eq(org.bukkit.entity.EnderDragon.class),any(java.util.function.Consumer.class));
+            // The head reaches the first column after DRAGON_LEAD ticks; nothing vanishes before that.
+            for(int i=0;i<UmetateGame.DRAGON_LEAD-1;i++) invoke(game,"tick");
+            assertEquals(box.capacity(),((FillState)get(game,"fill")).filled());
+            for(int i=0;i<box.width()+2;i++) invoke(game,"tick");
+            assertEquals(0,((FillState)get(game,"fill")).filled());
+            for(int i=0;i<box.capacity();i++) assertEquals(Material.AIR,f.types.get(box.cell(i)));
+            for(int i=0;i<UmetateGame.DRAGON_LEAD*2+UmetateGame.DRAGON_TAIL;i++) invoke(game,"tick");
+            assertFalse(game.dragonClearing());
+        }
+    }
+    @Test void instantClearStillAvailable() throws Exception {
+        try (var f = new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,1); UmetateGame game=game(f,box);
+            for(int i=0;i<box.capacity();i++) f.types.put(box.cell(i),Material.DIAMOND_BLOCK);
+            game.clear(false,""); assertFalse(game.dragonClearing()); drainChanges(game);
+            for(int i=0;i<box.capacity();i++) assertEquals(Material.AIR,f.types.get(box.cell(i)));
+        }
+    }
+    @Test void winLaunchesFireworksAroundTheBox() throws Exception {
+        try (var f = new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,1); UmetateGame game=game(f,box);
+            ((WinClock)get(game,"clock")).duration(1);
+            for(int i=0;i<box.capacity();i++) f.types.put(box.cell(i),Material.DIAMOND_BLOCK);
+            for(int i=0;i<60+UmetateGame.SHOW_TICKS;i++) invoke(game,"tick");drainChanges(game);
+            verify((UmetatePlugin)f.plugin,times(1)).requestWin(true,WinService.Reason.FILL_COMPLETE);
+            verify(f.world,atLeast(10)).spawn(any(org.bukkit.Location.class),eq(org.bukkit.entity.Firework.class),any(java.util.function.Consumer.class));
+        }
     }
     private static void drainChanges(UmetateGame game)throws Exception {
         for(int i=0;i<5000 && game.busy();i++){invoke(game,"tick");Thread.sleep(1);}

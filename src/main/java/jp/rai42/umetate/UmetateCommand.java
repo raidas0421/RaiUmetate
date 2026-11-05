@@ -19,7 +19,7 @@ public final class UmetateCommand implements TabExecutor {
         HELP.put("fillblock <個数>", "指定個数を直接配置");
         HELP.put("fillfoun [層数]", "全体／指定層数分を噴水で追加");
         HELP.put("fillblockfoun <個数>", "指定個数を噴水で追加");
-        HELP.put("clear", "箱の中を空にする");
+        HELP.put("clear [1/2]", "箱の中を空にする（既定はエンダードラゴンが通過して消す。1: 即時、2: ドラゴン）");
         HELP.put("delete", "箱を削除し作成前の地形に戻す");
         HELP.put("stop", "勝利タイマーの自動開始を停止");
         HELP.put("start", "勝利タイマーを再開");
@@ -99,7 +99,11 @@ public final class UmetateCommand implements TabExecutor {
                 }
                 case "fillblock", "fillblockfoun" -> { atLeast(args,2);game.add(integer(args,1,1,1000000),sub.equals("fillblock"));game.note(sub, name(args, 2)); }
                 case "repair" -> { atLeast(args, 2); int added = game.repair(integer(args, 1, 1, 1000000)); game.note("repair", name(args, 2)); ok(sender, "修復波に " + added + " ブロックを追加しました。"); }
-                case "clear" -> { game.clear(); game.note("clear", name(args, 1)); ok(sender, "箱を空にします。"); }
+                case "clear" -> {
+                    int n = numbers(args, 1, 1); String who = name(args, 1 + n);
+                    if (n == 0) game.clear(); else game.clear(integer(args, 1, 1, 2) == 2, who);
+                    game.note("clear", who); ok(sender, "箱を空にします。");
+                }
                 case "delete" -> { game.delete(); game.note("delete", name(args, 1)); ok(sender, "箱を削除し地形を復元します。"); }
                 case "stop" -> { game.pause(); game.note("stop", name(args, 1)); ok(sender, "勝利タイマーを停止しました。startで再開します。"); }
                 case "start" -> { game.resume(); game.note("start", name(args, 1)); ok(sender, "勝利タイマーを再開しました。"); }

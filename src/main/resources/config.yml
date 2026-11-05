@@ -38,8 +38,16 @@ frame-health:
   enabled: true
   max-health: 10000
   rebuild-delay-ticks: 100
-  # 未使用（崩壊時の中身は落下させず、performance.instant-max-ms-per-tick の範囲で数tickのうちに消去します）。
+  # 未使用（旧設定）。
   release-blocks-per-tick: 200
+  # 枠が壊れたとき、中身を下の段から順にその場で真下へ落とします。落ちたブロックは消さずにそのまま残ります。
+  collapse:
+    # 1tickに落とし始めるブロック数。
+    launch-per-tick: 40
+    # 同時に落ちている落下ブロックの上限（重くならないように待ちます）。
+    max-flying: 600
+    # 1回の崩壊で落とす最大数。超えた分（上の段）は枠の再生成まで宙に残り、そのあと箱の重力で詰まります。
+    max-launch: 3000
 bedrock-integration:
   valid-boundary-materials: [BEDROCK, GLASS, OAK_PLANKS, SPRUCE_PLANKS, BIRCH_PLANKS, JUNGLE_PLANKS, ACACIA_PLANKS, DARK_OAK_PLANKS, MANGROVE_PLANKS, CHERRY_PLANKS, BAMBOO_PLANKS, CRIMSON_PLANKS, WARPED_PLANKS]
 # RaiBRから移植したOBS枠HP表示。必要な場合に有効化（RaiBR既定ポートと分離）。
@@ -74,19 +82,23 @@ effects:
   comet-radius: 2.5
   zeus-radius: 10.0
   blackhole-radius: 12.0
+  # 埋め立て成功時に箱のまわりから花火を打ち上げる（約4秒）。
+  win-fireworks: true
+  # /umetate clear（全消し）でエンダードラゴンが箱の上を通過し、通ったところから中身を消す（約4～5秒）。
+  # false で従来どおり即時に消す。/umetate clear 1 は常に即時、clear 2 は常にドラゴン。
+  clear-dragon: true
 
 # 箱の周辺にいるプレイヤーのブロック操作距離（設置・破壊共通）。0で通常、最大64。
 block-reach: 20
 
-# 箱内のブロックを砂と同じFallingBlockとして落下。
+# 箱内の浮いたブロックを、その列の一番下の空きマスへ即座に移します（上に積まれた列もまとめて詰めます）。
 gravity:
-  # 重力の監視・走査・生成に使う時間予算。超過分は次回へ繰り越し。
+  # 重力の走査と移動に使う時間予算。超過分は次回へ繰り越し。
   max-work-ms-per-tick: 2.0
   enabled: true
   interval-ticks: 2
   scan-per-step: 2000
   blocks-per-step: 256
-  max-falling-blocks: 256
 
 # RaiBRと同様に鮭の爆発でエンティティにもダメージを与える。
 salmon:

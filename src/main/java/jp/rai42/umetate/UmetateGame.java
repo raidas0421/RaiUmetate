@@ -116,6 +116,16 @@ public final class UmetateGame implements Listener, FrameArena {
     private final Map<FallingBlock, GravityFall> falling = new LinkedHashMap<>();
     private record GravityFall(Box.Cell source, BlockData data, int started) {}
     private double blockReach;
+    /** Win celebration: rockets launched around the box rim until showUntil (ticks). */
+    private int showUntil = -1;
+    private Location showCentre;
+    private double showRadius;
+    /** Ender-dragon clear: the dragon flies across the box along +X and removes each column as it passes. */
+    private EnderDragon dragon;
+    private Box dragonBox;
+    private int dragonTick, dragonColumn;
+    private String dragonName = "";
+    static final int DRAGON_LEAD = 14, DRAGON_TAIL = 30;
 
     UmetateGame(UmetatePlugin plugin) {
         this.plugin = plugin;
@@ -341,7 +351,74 @@ public final class UmetateGame implements Listener, FrameArena {
         structureUpdates = false;
         });
     }
-    void clear() {
+    /** 全消し: the configured style (ender dragon unless effects.clear-dragon is false). */
+    void clear() { clear(settings.clearDragon(), ""); }
+    void clear(boolean withDragon, String name) {
+        if (!withDragon) { clearNow(); return; }
+        require(); checkNoContainers(box.envelopeCells()); cleanupEffects();
+        dragonBox = box; dragonTick = 0; dragonColumn = box.x() - box.radius() + 1; dragonName = name == null ? "" : name;
+        Location at = dragonAt(0);
+        dragon = world.spawn(at, EnderDragon.class, d -> {
+            d.setAI(false); d.setPersistent(false); d.setInvulnerable(true); d.addScoreboardTag(TAG);
+            if (!dragonName.isBlank()) { d.customName(Component.text(dragonName, NamedTextColor.LIGHT_PURPLE)); d.setCustomNameVisible(true); }
+        });
+        world.playSound(at, "minecraft:entity.ender_dragon.growl", 3f, 1f);
+        world.spawnParticle(Particle.REVERSE_PORTAL, at, 80, 2, 2, 2, .1);
+    }
+    /** Head position: starts DRAGON_LEAD blocks before the box, swoops low over the top and climbs away. */
+    private Location dragonAt(int t) {
+        int w = dragonBox.width(), duration = w + 2 * DRAGON_LEAD;
+        double x = dragonBox.x() - dragonBox.radius() + 1 - DRAGON_LEAD + t, progress = Math.min(1, (double) t / duration);
+        double top = dragonBox.y() + dragonBox.height() + 1;
+        double y = top + 9 - 5 * Math.sin(Math.PI * progress) + Math.max(0, t - duration) * .6;
+        // An ender dragon's model faces opposite its yaw, so yaw 90 makes it face +X (east).
+        return new Location(world, x, y, dragonBox.z() + .5, 90, 0);
+    }
+    private void dragonTick() {
+        if (dragonBox == null) return;
+        if (dragonBox != box || frameHealth.isCollapsing() || structure != null || preparation != null) { stopDragon(); return; }
+        dragonTick++;
+        Location at = dragonAt(dragonTick);
+        if (dragon != null) {
+            if (!dragon.isValid()) dragon = null; else dragon.teleport(at);
+        }
+        if (dragonTick % 10 == 0) world.playSound(at, "minecraft:entity.ender_dragon.flap", 2f, .9f);
+        int maxX = box.x() + box.radius() - 1;
+        // Columns at or behind the head are cleared; one column per tick keeps each tick under ~1500 block changes.
+        if (dragonColumn <= maxX && at.getX() >= dragonColumn) {
+            clearColumn(dragonColumn++);
+            if (dragonColumn > maxX) { clock.tick(false); clock.resume(); tell("エンダードラゴンが箱の中を空にしました。" + named(dragonName)); }
+        }
+        if (dragonColumn > maxX && dragonTick >= box.width() + 2 * DRAGON_LEAD + DRAGON_TAIL) {
+            world.spawnParticle(Particle.REVERSE_PORTAL, at, 120, 3, 2, 3, .2);
+            world.playSound(at, "minecraft:entity.enderman.teleport", 2f, .6f);
+            stopDragon();
+        }
+    }
+    private void clearColumn(int x) {
+        BlockData air = data(Material.AIR); int r = box.radius();
+        for (int y = box.y() + 1; y <= box.y() + box.height(); y++)
+            for (int z = box.z() - r + 1; z < box.z() + r; z++) {
+                Block b = world.getBlockAt(x, y, z); Material type = b.getType();
+                if (type.isAir() || tileGuard.isTile(type)) continue;
+                b.setBlockData(air, false); update(box.index(x, y, z), b);
+            }
+        double top = box.y() + box.height() + .5, mid = box.y() + (box.height() + 1) / 2.0;
+        // Newer versions give dragon breath a Float "power"; older ones take no data.
+        world.spawnParticle(Particle.DRAGON_BREATH, new Location(world, x + .5, mid, box.z() + .5), 40, .3, box.height() / 3.0, r / 2.0, .02,
+            Particle.DRAGON_BREATH.getDataType() == Float.class ? (Object) 1f : null);
+        world.spawnParticle(Particle.FLAME, new Location(world, x + .5, top, box.z() + .5), 15, .2, .2, r / 2.0, .03);
+        if ((x - box.x()) % 4 == 0) {
+            world.spawnParticle(Particle.EXPLOSION, new Location(world, x + .5, top, box.z() + .5), 3, .5, .5, r / 2.0, 0);
+            world.playSound(new Location(world, x + .5, top, box.z() + .5), "minecraft:entity.generic.explode", 1f, .7f);
+        }
+    }
+    private void stopDragon() {
+        if (dragon != null) dragon.remove();
+        dragon = null; dragonBox = null;
+    }
+    boolean dragonClearing() { return dragonBox != null; }
+    void clearNow() {
         require(); checkNoContainers(box.envelopeCells()); cleanupEffects();
         BlockData air = data(Material.AIR);
         begin(box.interior(0, box.capacity()), c -> { Block b = block(c); if (!b.getType().isAir()) b.setBlockData(air, false); }, () -> {
@@ -588,10 +665,12 @@ public final class UmetateGame implements Listener, FrameArena {
     private void tick() {
         tick++;
         doubleTime.tick();
+        showTick();
         if(ioFailed)return;
         saveTick();if(ioFailed)return;
         if(preparation!=null){preparationTick();return;}
         if (box == null || ioFailed) return;
+        dragonTick();
         if (lid != null && saving==null && lid.tick()) {
             removeLid();
             if (!save(transitioning)) return;
@@ -648,15 +727,15 @@ public final class UmetateGame implements Listener, FrameArena {
         if (busy() || box == null) return;
         long deadline=System.nanoTime()+settings.gravityWorkNanos();
         ensureGravityQueue();
-        int spawned=0,limit=settings.gravityBlocksPerStep();
-        int max=settings.gravityMaxFallingBlocks();
+        int moved=0,limit=settings.gravityBlocksPerStep();
         if(settings.gravityEnabled()) {
             boolean first=true;
-            while(!gravityQueue.isEmpty() && spawned<limit && falling.size()<max && (first || System.nanoTime()<deadline)) {
+            while(!gravityQueue.isEmpty() && moved<limit && (first || System.nanoTime()<deadline)) {
                 first=false;int index=gravityQueue.removeFirst();gravityQueued.clear(index);
-                if(startGravity(index))spawned++;
+                moved+=dropColumn(index);
             }
         }
+        // Falling entities only exist in worlds saved by a version before instant gravity.
         for (var entry : new ArrayList<>(falling.entrySet())) {
             FallingBlock entity = entry.getKey(); Location at = entity.getLocation();
             if (!entity.isValid() || tick - entry.getValue().started() > 600 || !at.getWorld().equals(world)
@@ -672,33 +751,48 @@ public final class UmetateGame implements Listener, FrameArena {
         // Only cached occupied cells above a free cell are candidates; the world is read just to confirm them.
         int area = box.width() * box.width();
         if (gravityScan < area || gravityScan >= fill.capacity()) gravityScan = area;
-        for (int checked = 0; checked < settings.gravityScanPerStep() && spawned < limit && falling.size() < max && System.nanoTime()<deadline; checked++) {
+        for (int checked = 0; checked < settings.gravityScanPerStep() && moved < limit && System.nanoTime()<deadline; checked++) {
             int candidate = fill.nextFallCandidate(gravityScan, area);
             if (candidate < 0) { gravityScan = area; break; }
             gravityScan = candidate + 1;
-            if(startGravity(candidate))spawned++;
+            moved+=dropColumn(candidate);
         }
     }
-    private boolean startGravity(int sourceIndex) {
-        int below=sourceIndex-box.width()*box.width();
+    /** Moves the block at sourceIndex and the stack above it straight onto the lowest free cells of the column. Returns blocks moved. */
+    private int dropColumn(int sourceIndex) {
+        int area=box.width()*box.width(),below=sourceIndex-area;
         // A cached support needs no world read; if it is stale, the scan's update re-queues this cell.
-        if(fill.reserved(below) || fill.occupied(below))return false;
+        if(fill.reserved(below) || fill.occupied(below))return 0;
         Block target=blockAt(below);
         // A stale cache entry is corrected so the sweep stops proposing it.
-        if(!(target.getType().isAir() || target.isLiquid())){update(below,target);return false;}
+        if(!gravitySpace(target)){update(below,target);return 0;}
         Block source=blockAt(sourceIndex);
-        if(!counts(source)){update(sourceIndex,source);return false;}
-        if(tileGuard.isTile(source.getType()))return false;
-        BlockData data=source.getBlockData();
-        FallingBlock entity=world.spawnFallingBlock(source.getLocation().add(.5,0,.5),data);
-        entity.addScoreboardTag(GRAVITY_TAG);entity.setPersistent(true);
-        entity.setGravity(true);entity.setDropItem(false);entity.setHurtEntities(false);
-        entity.shouldAutoExpire(false);entity.setInvulnerable(true);
-        falling.put(entity,new GravityFall(box.cell(sourceIndex),data,tick));
-        source.setBlockData(data(Material.AIR), false);update(sourceIndex,source);
-        // Also propagate when the background sweep discovered a block absent from the cache.
-        queueGravity(sourceIndex+box.width()*box.width(),true);
-        return true;
+        if(!counts(source)){update(sourceIndex,source);return 0;}
+        if(tileGuard.isTile(source.getType()))return 0;
+        int landing=below;
+        for(int next=landing-area;next>=0 && !fill.occupied(next) && !fill.reserved(next);next-=area) {
+            Block candidate=blockAt(next);
+            if(!gravitySpace(candidate)){update(next,candidate);break;}
+            landing=next;
+        }
+        int moved=0;BlockData air=data(Material.AIR);
+        // landing stays below i, and every cell between them is free or was just vacated.
+        for(int i=sourceIndex;i<fill.capacity();i+=area) {
+            // A fountain block is arriving here, or the stack is pinned by a chest: the sweep retries the rest.
+            if(fill.reserved(i))break;
+            if(!fill.occupied(i))continue;
+            Block b=blockAt(i);
+            if(!counts(b)){update(i,b);continue;}
+            if(tileGuard.isTile(b.getType()))break;
+            Block to=blockAt(landing);
+            if(!gravitySpace(to)){update(landing,to);break;}
+            BlockData data=b.getBlockData();
+            // TNT stays TNT; everything else takes the landing layer's material under autoreplace.
+            to.setBlockData(autoreplace && data.getMaterial()!=Material.TNT?data(material(landing)):data,false);update(landing,to);
+            b.setBlockData(air,false);update(i,b);
+            landing+=area;moved++;
+        }
+        return moved;
     }
     private void recoverGravity(Entity entity) {
         if (!(entity instanceof FallingBlock fb) || !entity.getScoreboardTags().contains(GRAVITY_TAG)
@@ -776,15 +870,20 @@ public final class UmetateGame implements Listener, FrameArena {
         lastCountdown = -1;
         title("win", "埋め立て成功！"); celebratory(centre());
         // Begin and persist cleanup before dispatch: no second notification on subsequent ticks/restart.
+        // Lit TNT survives the win: it stays scheduled and goes off in the next round.
+        List<Bomb> lit = bombs.stream().filter(b -> b.physical).toList(); bombs.removeAll(lit);
         cleanupEffects();
+        bombs.addAll(lit);
+        fireworkShow();
         boolean[] kept = {false}; BlockData air = data(Material.AIR);
         begin(box.interior(0, box.capacity()), c -> {
             Block b = block(c); Material type = b.getType();
-            if (tileGuard.isTile(type)) kept[0] = true; else if (!type.isAir()) b.setBlockData(air, false);
+            if (type.isAir()) return;
+            if (tileGuard.isTile(type) || b.getBlockData().getMaterial() == Material.TNT) kept[0] = true; else b.setBlockData(air, false);
         }, () -> {
             // Clock state is reset here so the checkpoint saved right after this callback matches runtime.
             resetOccupancy(); clock.tick(false); clock.resume();
-            // Only containers left behind need a full re-read.
+            // Only containers and TNT left behind need a full re-read.
             if (kept[0]) beginReconcile(() -> tell("クリア！箱の中を空にしました。")); else tell("クリア！箱の中を空にしました。");
         });
         structureUpdates = false;
@@ -1089,6 +1188,44 @@ public final class UmetateGame implements Listener, FrameArena {
             if (!b.getType().isAir() && !(tileGuard.isTile(b.getType()))) { b.setBlockData(data(Material.AIR), false); update(b); }
         }
     }
+    /** Rockets around the rim for SHOW_TICKS, ending in a bigger volley; purely visual. */
+    static final int SHOW_TICKS = 80;
+    private void fireworkShow() {
+        if (!settings.winFireworks()) return;
+        showCentre = centre().subtract(0, 1, 0); showRadius = box.radius() + .5; showUntil = tick + SHOW_TICKS;
+        for (Player p : Bukkit.getOnlinePlayers()) if (near(p)) p.playSound(p.getLocation(), "minecraft:ui.toast.challenge_complete", 1f, 1f);
+    }
+    private static final Color[] SHOW_COLORS = { Color.RED, Color.ORANGE, Color.YELLOW, Color.LIME, Color.AQUA, Color.BLUE, Color.FUCHSIA, Color.WHITE };
+    private static final FireworkEffect.Type[] SHOW_TYPES = { FireworkEffect.Type.BALL_LARGE, FireworkEffect.Type.BALL, FireworkEffect.Type.STAR, FireworkEffect.Type.BURST };
+    private void showTick() {
+        if (showUntil < 0) return;
+        int left = showUntil - tick;
+        if (left < 0 || showCentre.getWorld() == null) { showUntil = -1; return; }
+        if (left % 4 != 0) return;
+        int count = left < 12 ? 5 : 2;
+        for (int i = 0; i < count; i++) {
+            // A random point on the rim, so rockets rise around the player instead of on top of them.
+            double edge = random.nextDouble() * 2 - 1; boolean alongX = random.nextBoolean(); double side = random.nextBoolean() ? 1 : -1;
+            Location at = showCentre.clone().add(alongX ? edge * showRadius : side * showRadius, 0, alongX ? side * showRadius : edge * showRadius);
+            launchFirework(at, left < 12);
+        }
+    }
+    private void launchFirework(Location at, boolean finale) {
+        var effect = FireworkEffect.builder().with(SHOW_TYPES[random.nextInt(finale ? 1 : SHOW_TYPES.length)])
+            .withColor(SHOW_COLORS[random.nextInt(SHOW_COLORS.length)], SHOW_COLORS[random.nextInt(SHOW_COLORS.length)])
+            .withFade(SHOW_COLORS[random.nextInt(SHOW_COLORS.length)]).flicker(random.nextBoolean()).trail(true).build();
+        int fuse = 22 + random.nextInt(14);
+        at.getWorld().spawn(at, Firework.class, f -> {
+            var meta = f.getFireworkMeta(); meta.addEffect(effect); meta.setPower(1); f.setFireworkMeta(meta);
+            f.setTicksToDetonate(fuse); f.setPersistent(false); f.addScoreboardTag(TAG);
+        });
+    }
+    /** Show rockets and the clearing dragon are decoration: they never hurt anyone. */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void decorationDamage(EntityDamageByEntityEvent e) {
+        Entity source = e.getDamager() instanceof ComplexEntityPart part ? part.getParent() : e.getDamager();
+        if (source.getScoreboardTags().contains(TAG) && (source instanceof Firework || source instanceof EnderDragon)) e.setCancelled(true);
+    }
     private void celebratory(Location at) {
         world.spawnParticle(Particle.FIREWORK, at, 60, 1.5, 1.5, 1.5, .12);
         world.playSound(at, "minecraft:entity.firework_rocket.blast", .6f, 1.2f);
@@ -1213,6 +1350,7 @@ public final class UmetateGame implements Listener, FrameArena {
     }
     private void cleanupEffects() {
         doubleTime.cancelPending();
+        stopDragon();
         rocket.stop();
         for (ExplodingSalmon salmon : salmons) salmon.entity().remove(); salmons.clear();
         settleAllGravity();
@@ -1261,6 +1399,7 @@ public final class UmetateGame implements Listener, FrameArena {
     }
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void explosion(EntityExplodeEvent e) {
+        if (e.getEntity() instanceof EnderDragon && e.getEntity().getScoreboardTags().contains(TAG)) { e.setCancelled(true); return; }
         if(e.getEntity().getScoreboardTags().contains(TntRocket.TAG))e.blockList().removeIf(b->!inside(b));
         protectExplosion(e.blockList(), e.getLocation());
     }

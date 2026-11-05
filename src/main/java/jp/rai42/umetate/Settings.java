@@ -24,7 +24,6 @@ public record Settings(SizeRules sizes,
     int performanceReconcilePerTick,
     int performanceChangesPerTick,
     int gravityBlocksPerStep,
-    int gravityMaxFallingBlocks,
     int gravityIntervalTicks,
     int gravityScanPerStep,
     int fountainBlocksPerTick,
@@ -37,9 +36,12 @@ public record Settings(SizeRules sizes,
     double meteorPower,
     double zeusPower,
     double cometPower,
-    double blackholePower) {
+    double blackholePower,
+    boolean winFireworks,
+    boolean clearDragon) {
     public Settings { titles=Map.copyOf(titles); }
-    public record Frame(boolean enabled,double maximum,int saveInterval,int releaseBudget,long rebuildDelay,List<String> materials) {
+    public record Frame(boolean enabled,double maximum,int saveInterval,int releaseBudget,long rebuildDelay,List<String> materials,
+                        int launchPerTick,int maxFlying,int maxLaunch) {
         public Frame { materials=List.copyOf(materials); }
     }
     public record DoubleTime(int maxSeconds,int maxMultiplier,int defaultSeconds,int defaultMultiplier,int stagger,List<String> excluded,Map<String,String> messages,Map<String,String> sounds) {
@@ -50,7 +52,9 @@ public record Settings(SizeRules sizes,
         if(!Double.isFinite(reach)||reach<0||reach>64)reach=20;
         var frame=new Frame(c.getBoolean("frame-health.enabled",true),finite(c.getDouble("frame-health.max-health",10000),10000,1,1000000000),
             Math.max(1,c.getInt("frame-health.save-interval-ticks",40)),Math.max(1,c.getInt("frame-health.release-blocks-per-tick",200)),
-            Math.max(20,c.getLong("frame-health.rebuild-delay-ticks",100)),c.getStringList("bedrock-integration.valid-boundary-materials"));
+            Math.max(20,c.getLong("frame-health.rebuild-delay-ticks",100)),c.getStringList("bedrock-integration.valid-boundary-materials"),
+            bounded(c,"frame-health.collapse.launch-per-tick",40,1,1000),bounded(c,"frame-health.collapse.max-flying",600,1,10000),
+            bounded(c,"frame-health.collapse.max-launch",3000,0,200000));
         var doubled=new DoubleTime(bounded(c,"double-time.max-seconds",600,1,Integer.MAX_VALUE/20),bounded(c,"double-time.max-multiplier",10,2,1000),
             c.getInt("double-time.default-seconds",30),c.getInt("double-time.multiplier",2),Math.max(0,c.getInt("double-time.stagger-ticks",5)),
             c.contains("double-time.excluded-effects")?c.getStringList("double-time.excluded-effects"):List.of("prison","freeze"),
@@ -67,7 +71,6 @@ public record Settings(SizeRules sizes,
             bounded(c,"performance.reconcile-per-tick",64,1,2000),
             bounded(c,"performance.changes-per-tick",1500,1,5000),
             bounded(c,"gravity.blocks-per-step",256,1,1500),
-            bounded(c,"gravity.max-falling-blocks",256,1,1500),
             bounded(c,"gravity.interval-ticks",2,1,20),
             bounded(c,"gravity.scan-per-step",2000,1,10000),
             bounded(c,"fountain.blocks-per-tick",4,1,20),
@@ -76,7 +79,8 @@ public record Settings(SizeRules sizes,
             bounded(c,"effects.max-active",100,12,200),
             bounded(c,"effects.max-endermen",30,1,50),
             bounded(c,"effects.max-chain-tnt",100,1,1000),
-            finite(c.getDouble("effects.tnt-radius",3),3,1,20),finite(c.getDouble("effects.meteor-radius",8),8,1,20),finite(c.getDouble("effects.zeus-radius",10),10,1,20),finite(c.getDouble("effects.comet-radius",2.5),2.5,1,20),finite(c.getDouble("effects.blackhole-radius",12),12,1,20));
+            finite(c.getDouble("effects.tnt-radius",3),3,1,20),finite(c.getDouble("effects.meteor-radius",8),8,1,20),finite(c.getDouble("effects.zeus-radius",10),10,1,20),finite(c.getDouble("effects.comet-radius",2.5),2.5,1,20),finite(c.getDouble("effects.blackhole-radius",12),12,1,20),
+            c.getBoolean("effects.win-fireworks",true),c.getBoolean("effects.clear-dragon",true));
     }
     private static int bounded(ConfigurationSection c,String key,int fallback,int min,int max){return Math.clamp(c.getInt(key,fallback),min,max);}
     private static double finite(double value,double fallback,double min,double max){return Double.isFinite(value)?Math.clamp(value,min,max):fallback;}

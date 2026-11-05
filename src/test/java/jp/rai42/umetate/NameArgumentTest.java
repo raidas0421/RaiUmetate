@@ -33,6 +33,8 @@ class NameArgumentTest {
         when(game.repair(anyInt())).thenReturn(5);
         run("freeze", "10", "太郎"); verify(game).freeze(10); verify(game).note("freeze", "太郎");
         run("clear", "太郎"); verify(game).clear(); verify(game).note("clear", "太郎");
+        run("clear", "2", "太郎"); verify(game).clear(true, "太郎");
+        run("clear", "1", "花子"); verify(game).clear(false, "花子");
         run("shield", "30", "太郎"); verify(game).shield(30);
         run("blackhole", "5", "太郎"); verify(game).blackhole(5);
         run("glass_prison", "5", "太郎"); verify(game).prison(5);

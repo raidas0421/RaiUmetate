@@ -72,7 +72,7 @@ class FrameHealthTest {
             f.health.customExplosion(f.origin, 4); assertEquals(9970, f.health.snapshot().health());
         }
     }
-    @Test void zeroHpSendsOneLossThenReleasesAndRestoresAfterFiveSeconds() {
+    @Test void zeroHpSendsOneLossThrowsContentsOutAndRestoresAfterFiveSeconds() {
         try (Fixture f = new Fixture(directory, 10)) {
             f.health.customExplosion(f.origin, 4);
             f.health.customExplosion(f.origin, 4);
@@ -85,13 +85,31 @@ class FrameHealthTest {
             Scheduled release = f.timers.stream().filter(t -> t.period() == 1).toList().getLast();
             release.action().run();
             assertEquals(Material.AIR, f.types.get(new Box.Cell(0,1,0)));
-            // Contents vanish in place; no falling-block entities are spawned.
-            assertTrue(f.falling.isEmpty());
+            // Contents drop straight down as tagged falling blocks that are left wherever they land.
+            assertEquals(1, f.falling.size());
+            FallingBlock thrown = f.falling.getFirst();
+            verify(thrown).addScoreboardTag(FrameHealth.FALLING_TAG);
+            verify(thrown).setDropItem(false);
+            verify(thrown,never()).setVelocity(any());
             Scheduled rebuild = f.delayed.removeFirst(); assertEquals(100, rebuild.delay());
             assertTrue(f.health.isCollapsing()); rebuild.action().run();
             assertFalse(f.health.isCollapsing()); assertEquals(10, f.health.snapshot().health());
             assertEquals(Material.BEDROCK, f.types.get(new Box.Cell(-1,1,0)));
             verify(f.arena).frameRestored();
+        }
+    }
+    @Test void collapseDropsTheBottomLayerFirstSoUpperBlocksHaveRoomToFall() {
+        try (Fixture f = new Fixture(directory, 10)) {
+            var tall = new ArenaBounds(f.world,-1,1,0,2,-1,1,"RADIUS",1,2);
+            when(f.arena.current()).thenReturn(java.util.Optional.of(tall));
+            f.health.refresh();
+            f.types.put(new Box.Cell(0,1,0),Material.DIAMOND_BLOCK);f.types.put(new Box.Cell(0,2,0),Material.EMERALD_BLOCK);
+            f.health.customExplosion(f.origin, 4); f.awaitCheckpoint();f.delayed.removeFirst().action().run();
+            var release = f.timers.stream().filter(t -> t.period() == 1).toList().getLast();
+            for (int i = 0; i < 20 && f.falling.size() < 2; i++) release.action().run();
+            assertEquals(2, f.falling.size());
+            assertEquals(Material.DIAMOND_BLOCK, f.falling.get(0).getBlockData().getMaterial());
+            assertEquals(Material.EMERALD_BLOCK, f.falling.get(1).getBlockData().getMaterial());
         }
     }
     @Test void containersAreExcludedFromFallingConversion() {
@@ -108,6 +126,17 @@ class FrameHealthTest {
             f.health.customExplosion(f.origin, 4);
             f.health.stop();FrameHealth restarted = new FrameHealth(f.plugin, f.arena); restarted.start();
             assertEquals(9970, restarted.snapshot().health()); restarted.stop();
+        }
+    }
+    @Test void resizingTheSameArenaKeepsHealth() {
+        try (Fixture f = new Fixture(directory, 10000)) {
+            f.health.customExplosion(f.origin, 4); assertEquals(9970, f.health.snapshot().health());
+            when(f.arena.current()).thenReturn(Optional.of(new ArenaBounds(f.world,-2,2,0,4,-2,2,"RADIUS",3,3))); f.health.refresh();
+            assertEquals(9970, f.health.snapshot().health());
+            when(f.arena.current()).thenReturn(Optional.of(new ArenaBounds(f.world,-1,1,0,1,-1,1,"RADIUS",1,1))); f.health.refresh();
+            assertEquals(9970, f.health.snapshot().health());
+            when(f.arena.current()).thenReturn(Optional.of(new ArenaBounds(f.world,9,11,5,6,9,11,"RADIUS",1,1))); f.health.refresh();
+            assertEquals(10000, f.health.snapshot().health());
         }
     }
     @Test void crashDuringCollapseRestoresSavedFrameOnNextStart() {

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.util.*;
 import org.bukkit.*;
 import org.bukkit.block.Block;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.boss.*;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -66,6 +67,7 @@ public final class FrameHealth implements Listener {
    private double maximum() { return maxHealth; }
    public boolean isCollapsing() { return collapsing; }
    private static String signature(ArenaBounds b) { return b.world().getUID()+":"+b.minX()+":"+b.maxX()+":"+b.floorY()+":"+b.topY()+":"+b.minZ()+":"+b.maxZ(); }
+   private static String hpArenaKey(ArenaBounds b) { return b.world().getUID()+":"+b.floorY(); }
    public void start() {
       YamlConfiguration state = YamlConfiguration.loadConfiguration(stateFile);
       maxHealth=Math.clamp(state.getDouble("max-health",maxHealth),1,1000000000);
@@ -89,7 +91,8 @@ public final class FrameHealth implements Listener {
       ArenaBounds b = current.get();
       if (!signature(b).equals(signature)) {
          if (collapsing) { abortCollapse(); }
-         savedFrame.clear(); signature = signature(b); hp = maximum(); save();
+         savedFrame.clear(); adoptArena(b);
+         save();
       } else if (!collapsing && !savedFrame.isEmpty()) {
          collapseBounds = b; restoreFrame();
       }
@@ -99,6 +102,18 @@ public final class FrameHealth implements Listener {
       bar.setVisible(settings.enabled());
       for (Player p : new ArrayList<>(bar.getPlayers())) if (!p.isOnline() || !p.getWorld().equals(b.world())) bar.removePlayer(p);
       for (Player p : b.world().getPlayers()) if (!bar.getPlayers().contains(p)) bar.addPlayer(p);
+   }
+   /** Switches to b; HP carries over only when the same box was resized, any other arena starts full. */
+   private void adoptArena(ArenaBounds b) {
+      boolean resizedSameArena=!signature.isEmpty() && stateArenaKey(signature).equals(hpArenaKey(b));
+      signature=signature(b);
+      if(!resizedSameArena) hp=maximum();
+   }
+   private static String stateArenaKey(String value) {
+      if(value==null || value.isEmpty()) return "";
+      String[] parts=value.split(":");
+      if(parts.length!=7) return "";
+      return parts[0]+":"+parts[3];
    }
    static String barTitle(double hp,double max,String size,String count,boolean collapsing) {
       if(collapsing)return "枠崩壊 — 再生成中";
@@ -239,7 +254,7 @@ public final class FrameHealth implements Listener {
    }
    private void hit(ArenaBounds b,double damage) {
       if(saveFailed || collapsing || damage<=0 || !settings.enabled()) return;
-      if(!signature(b).equals(signature)) { signature=signature(b);hp=maximum(); }
+      if(!signature(b).equals(signature)) adoptArena(b);
       hp=Math.max(0,hp-damage);
       lastDamage=damage;revision++;publish();
       if(hp==0) beginCollapse(b); else save();
@@ -282,28 +297,40 @@ public final class FrameHealth implements Listener {
          block.setType(Material.AIR,true);
       }
       b.world().playSound(b.topCenter(),"minecraft:block.glass.break",3,1);
-      int[] cursor={b.innerMinX(),b.innerMinY(),b.innerMinZ()};int[] removed={0};
+      // Contents drop straight down as falling blocks and stay wherever they land.
+      // Bottom layer first: a falling block with a solid block under it re-lands in the cell it just left.
+      // Launches are spread over ticks and capped in flight: the whole box at once kept the server at ~15 TPS for ~15 s.
+      int[] cursor={b.innerMinX(),b.innerMinY(),b.innerMinZ()};int[] launched={0};
+      List<FallingBlock> flying=new ArrayList<>();
       var air=Bukkit.createBlockData(Material.AIR);
-      // Contents vanish in place: falling-block entities for the whole box kept the server at ~15 TPS for ~15 s.
       releaseTask=Bukkit.getScheduler().runTaskTimer(plugin,()->{
          if(!sameArena(b)){abortCollapse();return;}
-         long deadline=System.nanoTime()+releaseNanos;
-         while(cursor[1]<=b.innerMaxY() && System.nanoTime()<deadline) {
+         flying.removeIf(e->!e.isValid());
+         long deadline=System.nanoTime()+releaseNanos;int now=0;
+         while(cursor[1]<=b.innerMaxY() && launched[0]<settings.maxLaunch() && now<settings.launchPerTick()
+               && flying.size()<settings.maxFlying() && System.nanoTime()<deadline) {
             Block block=b.world().getBlockAt(cursor[0],cursor[1],cursor[2]);
             Material type=block.getType();
-            if(!type.isAir() && !block.isLiquid() && !(tileGuard.isContainer(type))) {
-               // A sparse sample of debris particles keeps the effect without a packet per block.
-               if(removed[0]++%40==0)b.world().spawnParticle(Particle.BLOCK,block.getLocation().add(.5,.5,.5),4,.4,.4,.4,block.getBlockData());
-               block.setBlockData(air,false);
+            if(!type.isAir() && !block.isLiquid() && !(tileGuard.isTile(type))) {
+               flying.add(drop(block));block.setBlockData(air,false);launched[0]++;now++;
             }
             if(++cursor[0]>b.innerMaxX()){cursor[0]=b.innerMinX();if(++cursor[2]>b.innerMaxZ()){cursor[2]=b.innerMinZ();cursor[1]++;}}
          }
-         if(cursor[1]>b.innerMaxY()) {
+         // Past the cap the upper layers stay put until the rebuilt box's gravity settles them.
+         if(cursor[1]>b.innerMaxY() || launched[0]>=settings.maxLaunch()) {
             releaseTask.cancel();releaseTask=null;
             long delay=settings.rebuildDelay();
             rebuildTask=Bukkit.getScheduler().runTaskLater(plugin,this::restoreFrame,delay);
          }
       },1,1);
+   }
+   /** Lets one block fall straight down; it lands as a real block and is never cleaned up. */
+   private FallingBlock drop(Block block) {
+      BlockData data=block.getBlockData();
+      FallingBlock entity=block.getWorld().spawnFallingBlock(block.getLocation().add(.5,0,.5),data);
+      entity.addScoreboardTag(FALLING_TAG);entity.setDropItem(false);entity.setHurtEntities(false);
+      if(java.util.concurrent.ThreadLocalRandom.current().nextInt(8)==0)block.getWorld().spawnParticle(Particle.BLOCK,block.getLocation().add(.5,.5,.5),4,.4,.4,.4,data);
+      return entity;
    }
    private void restoreFrame() {
       if(collapseBounds==null || !sameArena(collapseBounds)){abortCollapse();return;}

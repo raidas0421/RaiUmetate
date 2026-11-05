@@ -100,7 +100,7 @@ class PhaseThreeTest {
             for(int i=0;i<box.capacity();i++)f.types.put(box.cell(i),Material.DIAMOND_BLOCK);
             for(var c:box.shellCells())f.types.put(c,Material.BEDROCK);
             invoke(game,"reconcileAll");
-            game.clear();
+            game.clearNow();
             var structure=UmetateGame.class.getDeclaredField("structure");structure.setAccessible(true);
             // After the checkpoint is written, no tick may leave the edit half-applied.
             int partialTicks=0;
