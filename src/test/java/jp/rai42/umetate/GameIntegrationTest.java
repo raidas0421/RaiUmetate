@@ -590,15 +590,77 @@ class GameIntegrationTest {
             game.clear(true,"太郎");
             assertTrue(game.dragonClearing()); assertFalse(game.busy());
             verify(f.world).spawn(any(org.bukkit.Location.class),eq(org.bukkit.entity.EnderDragon.class),any(java.util.function.Consumer.class));
-            // The head reaches the first column after DRAGON_LEAD ticks; nothing vanishes before that.
-            for(int i=0;i<UmetateGame.DRAGON_LEAD-1;i++) invoke(game,"tick");
-            assertEquals(box.capacity(),((FillState)get(game,"fill")).filled());
-            for(int i=0;i<box.width()+2;i++) invoke(game,"tick");
+            // Default pass: clear-dragon-seconds (9) of flight from DRAGON_LEAD blocks before the box to DRAGON_LEAD past it.
+            int duration=9*20,first=(int)Math.ceil((double)UmetateGame.DRAGON_LEAD/(box.width()+2*UmetateGame.DRAGON_LEAD)*duration);
+            for(int i=0;i<first-2;i++) invoke(game,"tick");
+            assertEquals(box.capacity(),((FillState)get(game,"fill")).filled(),"nothing vanishes before the head arrives");
+            // Columns go one at a time: part-way through the pass the box is neither full nor empty.
+            for(int i=first-2;i<first+3;i++) invoke(game,"tick");
+            int part=((FillState)get(game,"fill")).filled();assertTrue(part>0 && part<box.capacity(),"partly cleared: "+part);
+            for(int i=first+3;i<duration;i++) invoke(game,"tick");
             assertEquals(0,((FillState)get(game,"fill")).filled());
             for(int i=0;i<box.capacity();i++) assertEquals(Material.AIR,f.types.get(box.cell(i)));
-            for(int i=0;i<UmetateGame.DRAGON_LEAD*2+UmetateGame.DRAGON_TAIL;i++) invoke(game,"tick");
+            assertTrue(game.dragonClearing());
+            for(int i=0;i<UmetateGame.DRAGON_TAIL+2;i++) invoke(game,"tick");
             assertFalse(game.dragonClearing());
         }
+    }
+    private static java.util.List<org.bukkit.entity.Allay> allays(FrameHealthTest.Fixture f) {
+        var list=new java.util.ArrayList<org.bukkit.entity.Allay>();
+        when(f.world.spawn(any(org.bukkit.Location.class),eq(org.bukkit.entity.Allay.class),any(java.util.function.Consumer.class))).thenAnswer(call -> {
+            var a=mock(org.bukkit.entity.Allay.class);when(a.isValid()).thenReturn(true);
+            when(a.getLocation()).thenReturn(new org.bukkit.Location(f.world,0,5,0));list.add(a);return a;
+        });
+        return list;
+    }
+    @Test void alleyFillsLowestFreeCellsFirstAtFourPerSecondAndVanishesAtZero() throws Exception {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,3);UmetateGame game=game(f,box);empty(f,box);var list=allays(f);
+            game.alley(5,"太郎");assertEquals(1,list.size());
+            var fill=(FillState)get(game,"fill");
+            for(int i=0;i<19;i++)invoke(game,"alleyTick");
+            assertEquals(3,fill.filled(),"4 per second = one block per 5 ticks");
+            for(int i=0;i<3;i++){assertTrue(fill.occupied(i));assertNotEquals(Material.AIR,f.types.get(box.cell(i)));}
+            assertFalse(fill.occupied(3));
+            verify(list.get(0),never()).remove();
+            for(int i=0;i<10;i++)invoke(game,"alleyTick");
+            assertEquals(5,fill.filled());for(int i=0;i<5;i++)assertTrue(fill.occupied(i));assertFalse(fill.occupied(5));
+            verify(list.get(0)).remove();assertTrue(((java.util.List<?>)get(game,"allays")).isEmpty());
+            for(int i=0;i<30;i++)invoke(game,"alleyTick");assertEquals(5,fill.filled());
+        }
+    }
+    @Test void alleyHoversWhenFullThenResumesWhenSpaceOpens() throws Exception {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,1);UmetateGame game=game(f,box);
+            for(int i=0;i<box.capacity();i++)f.types.put(box.cell(i),Material.DIAMOND_BLOCK);
+            invoke(game,"reconcileAll");var list=allays(f);var fill=(FillState)get(game,"fill");
+            assertTrue(fill.full());game.alley(2,"");
+            for(int i=0;i<40;i++)invoke(game,"alleyTick");
+            verify(list.get(0),never()).remove();verify(list.get(0),atLeastOnce()).teleport(any(org.bukkit.Location.class));
+            f.types.put(box.cell(4),Material.AIR);invoke(game,"reconcileAll");
+            for(int i=0;i<10;i++)invoke(game,"alleyTick");
+            assertTrue(fill.occupied(4));verify(list.get(0),never()).remove();
+            f.types.put(box.cell(2),Material.AIR);invoke(game,"reconcileAll");
+            for(int i=0;i<10;i++)invoke(game,"alleyTick");
+            assertTrue(fill.full());verify(list.get(0)).remove();
+        }
+    }
+    @Test void alleyHasConcurrencyCapAndCleanupRemovesIt() throws Exception {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,2,3);UmetateGame game=game(f,box);empty(f,box);var list=allays(f);
+            for(int i=0;i<20;i++)game.alley(1000000,"");
+            assertThrows(IllegalArgumentException.class,()->game.alley(1,""));
+            assertThrows(IllegalArgumentException.class,()->game.alley(0,""));
+            invoke(game,"cleanupEffects");for(var a:list)verify(a).remove();
+            assertTrue(((java.util.List<?>)get(game,"allays")).isEmpty());
+        }
+    }
+    @Test void alleyCommandTakesCountAndOptionalName() {
+        var game=mock(UmetateGame.class);var sender=mock(org.bukkit.entity.Player.class);
+        when(sender.hasPermission("raiumetate.admin")).thenReturn(true);var command=new UmetateCommand(game);
+        command.onCommand(sender,null,"umetate",new String[]{"alley","50"});verify(game).alley(50,"");
+        command.onCommand(sender,null,"umetate",new String[]{"alley","12345","太郎"});verify(game).alley(12345,"太郎");
+        clearInvocations(game);command.onCommand(sender,null,"umetate",new String[]{"alley","0"});verify(game,never()).alley(anyInt(),any());
     }
     @Test void instantClearStillAvailable() throws Exception {
         try (var f = new FrameHealthTest.Fixture(directory,10000)) {

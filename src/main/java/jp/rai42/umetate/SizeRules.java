@@ -2,8 +2,10 @@ package jp.rai42.umetate;
 import org.bukkit.configuration.ConfigurationSection;
 /** Public dimensions are interior diameters; Box retains its on-disk radius geometry. */
 public record SizeRules(int minDiameter,int maxDiameter,int minHeight,int maxHeight,int defaultDiameter,int defaultHeight) {
+    /** Hard safety limits; config.yml may lower them but never raise them. */
+    static final int MAX_DIAMETER=53, MAX_HEIGHT=36;
     private static final int LEGACY_MAX_DIAMETER=99, LEGACY_MAX_HEIGHT=40;
-    private static final SizeRules STANDARD=new SizeRules(3,49,3,30,11,9);
+    private static final SizeRules STANDARD=new SizeRules(3,MAX_DIAMETER,3,MAX_HEIGHT,11,9);
     static SizeRules standard(){return STANDARD;}
     static void validateSavedGeometry(int radius,int height) {
         long diameter=(long)radius*2-1;
@@ -11,23 +13,23 @@ public record SizeRules(int minDiameter,int maxDiameter,int minHeight,int maxHei
             throw new IllegalArgumentException("保存されたサイズが不正です。直径3～99、高さ1～40の旧形式に対応しています。");
     }
     public SizeRules {
-        if(minDiameter<3 || maxDiameter>49 || minDiameter>maxDiameter || minDiameter%2==0 || maxDiameter%2==0 ||
-           minHeight<3 || maxHeight>30 || minHeight>maxHeight || defaultDiameter%2==0 ||
+        if(minDiameter<3 || maxDiameter>MAX_DIAMETER || minDiameter>maxDiameter || minDiameter%2==0 || maxDiameter%2==0 ||
+           minHeight<3 || maxHeight>MAX_HEIGHT || minHeight>maxHeight || defaultDiameter%2==0 ||
            defaultDiameter<minDiameter || defaultDiameter>maxDiameter || defaultHeight<minHeight || defaultHeight>maxHeight)
-            throw new IllegalArgumentException("サイズ設定: 直径は3～49の奇数、高さは3～30で指定してください。");
+            throw new IllegalArgumentException("サイズ設定: 直径は3～"+MAX_DIAMETER+"の奇数、高さは3～"+MAX_HEIGHT+"で指定してください。");
     }
     public static void migrate(ConfigurationSection c) {
         if(!c.contains("default-diameter",true) && c.contains("default-radius",true))
-            c.set("default-diameter",(int)Math.clamp(c.getLong("default-radius")*2-1,3,49));
+            c.set("default-diameter",(int)Math.clamp(c.getLong("default-radius")*2-1,3,MAX_DIAMETER));
         if(!c.contains("max-diameter",true) && c.contains("max-radius",true))
-            c.set("max-diameter",(int)Math.clamp(c.getLong("max-radius")*2-1,3,49));
+            c.set("max-diameter",(int)Math.clamp(c.getLong("max-radius")*2-1,3,MAX_DIAMETER));
         // Old installations shipped height 40. Apply the new hard safety limit during migration.
-        if(c.contains("max-radius",true) && c.getInt("max-height",30)>30)c.set("max-height",30);
+        if(c.contains("max-radius",true) && c.getInt("max-height",MAX_HEIGHT)>MAX_HEIGHT)c.set("max-height",MAX_HEIGHT);
         c.set("default-radius",null);c.set("max-radius",null);c.set("max-volume",null);
     }
     public static SizeRules read(ConfigurationSection c) {
-        return new SizeRules(c.getInt("min-diameter",3),c.getInt("max-diameter",49),c.getInt("min-height",3),
-            c.getInt("max-height",30),c.getInt("default-diameter",11),c.getInt("default-height",9));
+        return new SizeRules(c.getInt("min-diameter",3),c.getInt("max-diameter",MAX_DIAMETER),c.getInt("min-height",3),
+            c.getInt("max-height",MAX_HEIGHT),c.getInt("default-diameter",11),c.getInt("default-height",9));
     }
     public int capDiameter(java.math.BigInteger requested) {
         if(requested.compareTo(java.math.BigInteger.valueOf(minDiameter))<0)throw new IllegalArgumentException("直径の最小は"+minDiameter+"です。");

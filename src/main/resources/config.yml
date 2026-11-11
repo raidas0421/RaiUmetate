@@ -1,10 +1,10 @@
 # 直径は外壁を除く内側の一辺（奇数）。
 default-diameter: 11
 min-diameter: 3
-max-diameter: 49
+max-diameter: 53
 default-height: 9
 min-height: 3
-max-height: 30
+max-height: 36
 default-boundary-material: GLASS
 win:
   # Winの送り先。ste: Stream To Earn、rlc: Rai Live（下の rai-live.url。状態と合図も送ります）、none: 送らない
@@ -85,9 +85,17 @@ effects:
   blackhole-radius: 12.0
   # 埋め立て成功時に箱のまわりから花火を打ち上げる（約4秒）。
   win-fireworks: true
-  # /umetate clear（全消し）でエンダードラゴンが箱の上を通過し、通ったところから中身を消す（約4～5秒）。
+  # /umetate clear（全消し）でエンダードラゴンが箱の上を通過し、通ったところから中身を消す（約9秒。clear-dragon-seconds で変更）。
   # false で従来どおり即時に消す。/umetate clear 1 は常に即時、clear 2 は常にドラゴン。
   clear-dragon: true
+  # エンダードラゴンが箱を通過しきるまでの秒数（3～60）。箱の大きさによらず、この時間で端から端まで飛びます。
+  clear-dragon-seconds: 9
+  # お助けアレイ（/umetate alley）の同時数上限。
+  max-alleys: 20
+
+# お助けアレイ。箱の空きマスを下の段から順に、層の素材（標準は石）で埋めます。
+alley:
+  blocks-per-second: 4
 
 # 箱の周辺にいるプレイヤーのブロック操作距離（設置・破壊共通）。0で通常、最大64。
 block-reach: 20

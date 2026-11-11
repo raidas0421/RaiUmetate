@@ -61,6 +61,7 @@ public final class UmetateCommand implements TabExecutor {
         HELP.put("sizemax", "直径・高さを最大にする");
         HELP.put("sizemin", "直径・高さを最小にする");
         HELP.put("salmon <数> [秒数] [威力] [名前]", "爆発シャケ（既定5秒・威力3）");
+        HELP.put("alley <ブロック数> [名前]", "お助けアレイ（空きマスを下から埋める。残り0で消える）");
         HELP.put("sizereset", "枠を設定上の初期サイズに戻す（既定11・9）");
         HELP.put("set_main_user <プレイヤー名>", "コンソールからの操作対象を設定");
         HELP.put("remove_main_user", "操作対象を解除");
@@ -128,6 +129,7 @@ public final class UmetateCommand implements TabExecutor {
                             n>=2?decimal(args[3],.1,20):3,name(args,2+n));
                     ok(sender,"爆発シャケを召喚しました。");
                 }
+                case "alley" -> { atLeast(args, 2); game.alley(integer(args, 1, 1, UmetateGame.ALLEY_MAX_BLOCKS), name(args, 2)); ok(sender, "お助けアレイの処理を受け付けました。"); }
                 case "tntrocket" -> { int n = numbers(args, 1, 1); game.tntRocket(n==1?integer(args,1,1,100):20, name(args, 1 + n)); }
                 case "randomtnt" -> { game.randomTnt(name(args, 1)); ok(sender, "ランダムTNTの処理を受け付けました。"); }
                 case "supertnt" -> { atLeast(args, 3); game.tnt(integer(args, 1, 1, 100), decimal(args[2], 1, 20), name(args, 3), "強化TNT"); ok(sender, "強化TNTの処理を受け付けました。"); }

@@ -112,6 +112,13 @@ public final class UmetateGame implements Listener, FrameArena {
     private final TntRocket rocket = new TntRocket(p -> p.getAttribute(org.bukkit.attribute.Attribute.EXPLOSION_KNOCKBACK_RESISTANCE));
     private final List<ExplodingSalmon> salmons = new ArrayList<>();
     private record ExplodingSalmon(Salmon entity, int expires, double power, String nickname) {}
+    /** Helper allay: fills free cells from the bottom up. Mutable: remaining blocks and the fractional placement budget. */
+    private static final class HelperAllay {
+        final Allay entity; final String nickname; int remaining; double budget;
+        HelperAllay(Allay entity, int remaining, String nickname) { this.entity = entity; this.remaining = remaining; this.nickname = nickname; }
+    }
+    private final List<HelperAllay> allays = new ArrayList<>();
+    static final int ALLEY_MAX_BLOCKS = 100_000_000;
     private static final String GRAVITY_TAG = "rai_umetate_gravity";
     private final Map<FallingBlock, GravityFall> falling = new LinkedHashMap<>();
     private record GravityFall(Box.Cell source, BlockData data, int started) {}
@@ -125,7 +132,9 @@ public final class UmetateGame implements Listener, FrameArena {
     private Box dragonBox;
     private int dragonTick, dragonColumn;
     private String dragonName = "";
-    static final int DRAGON_LEAD = 14, DRAGON_TAIL = 30;
+    static final int DRAGON_LEAD = 24, DRAGON_TAIL = 40;
+    /** Ticks the head needs to fly from DRAGON_LEAD blocks before the box to DRAGON_LEAD blocks past it. */
+    private int dragonDuration() { return settings.clearDragonSeconds() * 20; }
 
     UmetateGame(UmetatePlugin plugin) {
         this.plugin = plugin;
@@ -359,7 +368,9 @@ public final class UmetateGame implements Listener, FrameArena {
         dragonBox = box; dragonTick = 0; dragonColumn = box.x() - box.radius() + 1; dragonName = name == null ? "" : name;
         Location at = dragonAt(0);
         dragon = world.spawn(at, EnderDragon.class, d -> {
-            d.setAI(false); d.setPersistent(false); d.setInvulnerable(true); d.addScoreboardTag(TAG);
+            d.setAI(false); d.setGravity(false); d.setPersistent(false); d.setInvulnerable(true); d.addScoreboardTag(TAG);
+            // A dragon keeps its own flight phase even without AI and would fight the per-tick teleport; make it hold still instead.
+            try { d.setPhase(EnderDragon.Phase.HOVER); } catch (RuntimeException ignored) {}
             if (!dragonName.isBlank()) { d.customName(Component.text(dragonName, NamedTextColor.LIGHT_PURPLE)); d.setCustomNameVisible(true); }
         });
         world.playSound(at, "minecraft:entity.ender_dragon.growl", 3f, 1f);
@@ -367,10 +378,12 @@ public final class UmetateGame implements Listener, FrameArena {
     }
     /** Head position: starts DRAGON_LEAD blocks before the box, swoops low over the top and climbs away. */
     private Location dragonAt(int t) {
-        int w = dragonBox.width(), duration = w + 2 * DRAGON_LEAD;
-        double x = dragonBox.x() - dragonBox.radius() + 1 - DRAGON_LEAD + t, progress = Math.min(1, (double) t / duration);
+        int w = dragonBox.width(), duration = dragonDuration();
+        double progress = Math.min(1, (double) t / duration);
+        double x = dragonBox.x() - dragonBox.radius() + 1 - DRAGON_LEAD + progress * (w + 2 * DRAGON_LEAD);
         double top = dragonBox.y() + dragonBox.height() + 1;
-        double y = top + 9 - 5 * Math.sin(Math.PI * progress) + Math.max(0, t - duration) * .6;
+        // Low enough to read as "over the box" from the front or above, never inside the walls.
+        double y = top + 6 - 3 * Math.sin(Math.PI * progress) + Math.max(0, t - duration) * .5;
         // An ender dragon's model faces opposite its yaw, so yaw 90 makes it face +X (east).
         return new Location(world, x, y, dragonBox.z() + .5, 90, 0);
     }
@@ -380,16 +393,19 @@ public final class UmetateGame implements Listener, FrameArena {
         dragonTick++;
         Location at = dragonAt(dragonTick);
         if (dragon != null) {
-            if (!dragon.isValid()) dragon = null; else dragon.teleport(at);
+            if (!dragon.isValid()) dragon = null; else { dragon.teleport(at); dragon.setVelocity(new Vector()); }
         }
         if (dragonTick % 10 == 0) world.playSound(at, "minecraft:entity.ender_dragon.flap", 2f, .9f);
+        // Even if the model is out of sight, the trail makes the pass visible.
+        if (dragonTick % 2 == 0) world.spawnParticle(Particle.DRAGON_BREATH, at, 25, 3, 1.5, 3, .02,
+            Particle.DRAGON_BREATH.getDataType() == Float.class ? (Object) 1f : null, true);
         int maxX = box.x() + box.radius() - 1;
         // Columns at or behind the head are cleared; one column per tick keeps each tick under ~1500 block changes.
-        if (dragonColumn <= maxX && at.getX() >= dragonColumn) {
+        while (dragonColumn <= maxX && at.getX() >= dragonColumn) {
             clearColumn(dragonColumn++);
             if (dragonColumn > maxX) { clock.tick(false); clock.resume(); tell("エンダードラゴンが箱の中を空にしました。" + named(dragonName)); }
         }
-        if (dragonColumn > maxX && dragonTick >= box.width() + 2 * DRAGON_LEAD + DRAGON_TAIL) {
+        if (dragonColumn > maxX && dragonTick >= dragonDuration() + DRAGON_TAIL) {
             world.spawnParticle(Particle.REVERSE_PORTAL, at, 120, 3, 2, 3, .2);
             world.playSound(at, "minecraft:entity.enderman.teleport", 2f, .6f);
             stopDragon();
@@ -708,7 +724,7 @@ public final class UmetateGame implements Listener, FrameArena {
             return;
         }
         rocket.tick(tick);
-        directTick(); fountainTick(); effectsTick(); salmonTick();
+        directTick(); fountainTick(); effectsTick(); salmonTick(); alleyTick();
         if (frameHealth.isCollapsing()) { clock.tick(false); return; }
         blastTick();
         gravityTick();
@@ -1122,6 +1138,95 @@ public final class UmetateGame implements Listener, FrameArena {
     private void ensureEffectCapacity(int added) {
         if (bombs.size() + blasts.size() + salmons.size() + rocket.pending() + added > settings.effectsMaxActive()) throw new IllegalArgumentException("妨害の同時実行上限です。少し待って再実行してください。");
     }
+    /** お助けアレイ: places blocks into free cells, lowest first, then vanishes at 0. */
+    void alley(int count, String nickname) { doubleTime.launch("alley", () -> alleyOnce(count, nickname)); }
+    private void alleyOnce(int count, String nickname) {
+        require();
+        if (count < 1 || count > ALLEY_MAX_BLOCKS) throw new IllegalArgumentException("ブロック数は1～" + ALLEY_MAX_BLOCKS + "で指定してください。");
+        int max = settings.effectsMaxAlleys();
+        if (doubleTime.isAdditionalLaunch() && allays.size() >= max) { plugin.getLogger().fine("追加アレイの上限超過分をスキップ"); return; }
+        if (allays.size() >= max) throw new IllegalArgumentException("アレイは同時に " + max + " 体までです。");
+        String label = nickname == null || nickname.isBlank() ? "お助けアレイ" : nickname;
+        Location at = centre();
+        Allay entity = world.spawn(at, Allay.class, mob -> {
+            mob.setAI(false); mob.setGravity(false); mob.setSilent(true); mob.setInvulnerable(true);
+            mob.setPersistent(false); mob.addScoreboardTag(TAG); mob.setCustomNameVisible(true);
+        });
+        HelperAllay a = new HelperAllay(entity, count, label);
+        allayName(a); allays.add(a);
+        world.spawnParticle(Particle.HAPPY_VILLAGER, at, 20, .5, .5, .5, .05);
+        tell("お助けアレイが " + count + " ブロック埋めに来ました。" + named(nickname));
+    }
+    private void allayName(HelperAllay a) {
+        a.entity.customName(Component.text(a.nickname + " 残り " + a.remaining, NamedTextColor.AQUA));
+    }
+    /** Index of the lowest placeable cell, or -1. Cells that turn out already solid are reconciled on the way. */
+    private int alleyTarget() {
+        int index = fill.nextFree(fill.searchHint());
+        for (int tries = 0; index >= 0 && tries < 512; tries++, index = fill.nextFree(index + 1)) {
+            Block target = blockAt(index);
+            if (tileGuard.isTile(target.getType())) continue;
+            if (counts(target)) { update(index, target); continue; }
+            return index;
+        }
+        return -1;
+    }
+    private Player alleyHelpee() {
+        Player best = null; double bestDistance = Double.MAX_VALUE;
+        for (Player p : world.getPlayers()) {
+            if (!near(p)) continue;
+            if (p.getUniqueId().equals(mainUser)) return p;
+            double d = p.getLocation().distanceSquared(centre());
+            if (d < bestDistance) { best = p; bestDistance = d; }
+        }
+        return best;
+    }
+    private void alleyTick() {
+        if (allays.isEmpty() || box == null || frameHealth.isCollapsing()) return;
+        boolean frozen = tick < frozenUntil;
+        for (HelperAllay a : new ArrayList<>(allays)) {
+            if (!a.entity.isValid()) { allays.remove(a); continue; }
+            Location goal = null;
+            if (!frozen) {
+                a.budget = Math.min(a.budget + settings.alleyBlocksPerSecond() / 20.0, Math.max(1, settings.alleyBlocksPerSecond()));
+                while (a.budget >= 1 && a.remaining > 0) {
+                    int index = alleyTarget();
+                    if (index < 0) { a.budget = Math.min(a.budget, 1); break; }
+                    Block target = blockAt(index);
+                    if (!target.getType().isAir()) target.setBlockData(data(Material.AIR), false);
+                    target.setBlockData(data(material(index)), false);
+                    update(index, target);
+                    a.budget--; a.remaining--;
+                    goal = location(box.cell(index)).add(0, 1.2, 0);
+                    if (tick % 4 == 0) world.playSound(target.getLocation(), "minecraft:block.amethyst_block.place", .4f, 1.5f);
+                }
+            }
+            if (a.remaining <= 0) {
+                Location at = a.entity.getLocation(); a.entity.remove(); allays.remove(a);
+                world.spawnParticle(Particle.HAPPY_VILLAGER, at, 30, .5, .5, .5, .1);
+                world.playSound(at, "minecraft:entity.allay.item_thrown", 1f, 1.2f);
+                tell("お助けアレイの仕事が終わりました。" + named(a.nickname));
+                continue;
+            }
+            if (goal == null) {
+                int index = alleyTarget();
+                if (index >= 0) goal = location(box.cell(index)).add(0, 1.2, 0);
+                else {
+                    // No free cell: float around a player's head until something frees up.
+                    Player p = alleyHelpee();
+                    Location base = p == null ? centre() : p.getLocation().add(0, 2.6, 0);
+                    double angle = (tick + a.nickname.hashCode()) / 12.0;
+                    goal = base.add(Math.cos(angle) * 1.6, Math.sin(angle * 1.5) * .3, Math.sin(angle) * 1.6);
+                }
+            }
+            Location cur = a.entity.getLocation();
+            double dx = goal.getX() - cur.getX(), dy = goal.getY() - cur.getY(), dz = goal.getZ() - cur.getZ();
+            Location next = cur.clone().add(dx * .35, dy * .35, dz * .35);
+            if (dx * dx + dz * dz > .04) next.setYaw((float) Math.toDegrees(Math.atan2(-dx, dz)));
+            a.entity.teleport(next);
+            if (tick % 10 == 0) allayName(a);
+        }
+    }
     private Location randomTarget() {
         int x = box.x() - box.radius() + 1 + random.nextInt(box.width());
         int z = box.z() - box.radius() + 1 + random.nextInt(box.width());
@@ -1353,6 +1458,7 @@ public final class UmetateGame implements Listener, FrameArena {
         stopDragon();
         rocket.stop();
         for (ExplodingSalmon salmon : salmons) salmon.entity().remove(); salmons.clear();
+        for (HelperAllay a : allays) a.entity.remove(); allays.clear();
         settleAllGravity();
         cancelFountain(); for (Bomb b : bombs) b.display.remove(); bombs.clear(); blasts.clear();
         for (Thief t : thieves) t.entity.remove(); thieves.clear();
@@ -1457,6 +1563,6 @@ public final class UmetateGame implements Listener, FrameArena {
         // Only stale entities: live entities in the lists are retained.
         for (Entity entity : entities) if (entity.getScoreboardTags().contains(TAG)
                 && flights.stream().noneMatch(f -> f.display.equals(entity)) && bombs.stream().noneMatch(b -> b.display.equals(entity))
-                && thieves.stream().noneMatch(t -> t.entity.equals(entity)) && salmons.stream().noneMatch(f -> f.entity().equals(entity)) && !prisonDisplays.contains(entity)) entity.remove();
+                && thieves.stream().noneMatch(t -> t.entity.equals(entity)) && salmons.stream().noneMatch(f -> f.entity().equals(entity)) && allays.stream().noneMatch(a -> a.entity.equals(entity)) && !prisonDisplays.contains(entity)) entity.remove();
     }
 }

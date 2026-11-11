@@ -19,7 +19,7 @@ class PhaseTwoTest {
         var s=Settings.read(c);assertEquals(5000,s.performanceChangesPerTick());assertEquals(1,s.gravityIntervalTicks());
         assertEquals(2000000,s.workNanos());assertEquals(20,s.blockReach());assertEquals(3,s.tntPower());
         assertEquals(Integer.MAX_VALUE/20,s.doubleTime().maxSeconds());assertEquals(2,s.doubleTime().maxMultiplier());assertEquals(0,s.doubleTime().stagger());
-        c.set("max-diameter",51);assertThrows(IllegalArgumentException.class,()->Settings.read(c));
+        c.set("max-diameter",55);assertThrows(IllegalArgumentException.class,()->Settings.read(c));
     }
     @Test void snapshotDoesNotFollowMutableConfigOrExposeMutableCollections() {
         var c=new YamlConfiguration();c.set("double-time.messages.bossbar","old");c.set("double-time.sound.start","test");
@@ -63,12 +63,12 @@ class PhaseTwoTest {
         }
     }
     @Test void newBoxUsesStandardSizeRulesButSavedLegacyDimensionsRemainReadable() {
-        assertEquals(72030,new Box(0,0,0,25,30).capacity());
-        for(int[] size:new int[][]{{26,30},{2,2},{2,31},{Integer.MAX_VALUE,3}})
+        assertEquals(101124,new Box(0,0,0,27,36).capacity());
+        for(int[] size:new int[][]{{28,36},{2,2},{2,37},{Integer.MAX_VALUE,3}})
             assertThrows(IllegalArgumentException.class,()->new Box(0,0,0,size[0],size[1]));
         assertEquals(392040,Box.restored(0,0,0,50,40).capacity());
         assertEquals(9,Box.restored(0,0,0,2,1).capacity());
         assertThrows(IllegalArgumentException.class,()->Box.restored(0,0,0,51,40));
-        assertEquals(new Box(1,2,3,25,30),Box.restored(1,2,3,25,30));
+        assertEquals(new Box(1,2,3,27,36),Box.restored(1,2,3,27,36));
     }
 }
