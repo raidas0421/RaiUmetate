@@ -144,7 +144,7 @@ public final class UmetateGame implements Listener, FrameArena {
         settings=Settings.read(plugin.getConfig());
         arenaStore=new ArenaStore(new File(plugin.getDataFolder(),"arena.yml").toPath());
         blockReach = settings.blockReach();
-        if (!Double.isFinite(blockReach) || blockReach < 0 || blockReach > 64) blockReach = 20;
+        if (!Double.isFinite(blockReach) || blockReach < 0 || blockReach > 64) blockReach = 64;
         autoreplace = settings.autoreplace();
         fireworks = settings.fireworks();
         toplock = settings.toplock();

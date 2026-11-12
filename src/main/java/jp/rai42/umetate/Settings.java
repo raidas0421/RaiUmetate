@@ -53,8 +53,8 @@ public record Settings(SizeRules sizes,
         public DoubleTime { excluded=List.copyOf(excluded);messages=Map.copyOf(messages);sounds=Map.copyOf(sounds); }
     }
     public static Settings read(ConfigurationSection c) {
-        double reach=c.getDouble("block-reach",20);
-        if(!Double.isFinite(reach)||reach<0||reach>64)reach=20;
+        double reach=c.getDouble("block-reach",64);
+        if(!Double.isFinite(reach)||reach<0||reach>64)reach=64;
         var frame=new Frame(c.getBoolean("frame-health.enabled",true),finite(c.getDouble("frame-health.max-health",10000),10000,1,1000000000),
             Math.max(1,c.getInt("frame-health.save-interval-ticks",40)),Math.max(1,c.getInt("frame-health.release-blocks-per-tick",200)),
             Math.max(20,c.getLong("frame-health.rebuild-delay-ticks",100)),c.getStringList("bedrock-integration.valid-boundary-materials"),

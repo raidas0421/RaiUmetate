@@ -17,7 +17,7 @@ class PhaseTwoTest {
         c.set("effects.tnt-radius",Double.NaN);c.set("double-time.max-seconds",Integer.MAX_VALUE);
         c.set("double-time.max-multiplier",1);c.set("double-time.stagger-ticks",-100);
         var s=Settings.read(c);assertEquals(5000,s.performanceChangesPerTick());assertEquals(1,s.gravityIntervalTicks());
-        assertEquals(2000000,s.workNanos());assertEquals(20,s.blockReach());assertEquals(3,s.tntPower());
+        assertEquals(2000000,s.workNanos());assertEquals(64,s.blockReach());assertEquals(3,s.tntPower());
         assertEquals(Integer.MAX_VALUE/20,s.doubleTime().maxSeconds());assertEquals(2,s.doubleTime().maxMultiplier());assertEquals(0,s.doubleTime().stagger());
         c.set("max-diameter",55);assertThrows(IllegalArgumentException.class,()->Settings.read(c));
     }
