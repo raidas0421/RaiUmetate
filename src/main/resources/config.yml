@@ -85,11 +85,13 @@ effects:
   blackhole-radius: 12.0
   # 埋め立て成功時に箱のまわりから花火を打ち上げる（約4秒）。
   win-fireworks: true
-  # /umetate clear（全消し）でエンダードラゴンが箱の上を通過し、通ったところから中身を消す（約10秒。clear-dragon-seconds で変更）。
+  # /umetate clear（全消し）でエンダードラゴンが箱の上を通過し、通ったところから中身を消す（約8秒。clear-dragon-seconds で変更）。
   # false で従来どおり即時に消す。/umetate clear 1 は常に即時、clear 2 は常にドラゴン。
   clear-dragon: true
   # エンダードラゴンが箱を通過しきるまでの秒数（3～60）。箱の大きさによらず、この時間で端から端まで飛びます。
-  clear-dragon-seconds: 10
+  clear-dragon-seconds: 8
+  # ドラゴンの向きの補正（度）。頭が進行方向の逆を向いて見えるときは 180 にします。
+  clear-dragon-yaw-offset: 0
   # お助けアレイ（/umetate alley）の同時数上限。
   max-alleys: 20
 

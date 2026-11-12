@@ -132,7 +132,7 @@ public final class UmetateGame implements Listener, FrameArena {
     private Box dragonBox;
     private int dragonTick, dragonColumn;
     private String dragonName = "";
-    static final int DRAGON_LEAD = 32, DRAGON_TAIL = 40;
+    static final int DRAGON_LEAD = 22, DRAGON_TAIL = 40;
     /** The dragon entity is positioned at its body; its head and mouth are about this far ahead (+X) of that point. */
     static final double DRAGON_HEAD = 7;
     private final Set<Chunk> dragonTickets = new HashSet<>();
@@ -387,9 +387,10 @@ public final class UmetateGame implements Listener, FrameArena {
         double x = dragonBox.x() - dragonBox.radius() + 1 - DRAGON_LEAD + progress * (w + 2 * DRAGON_LEAD);
         double top = dragonBox.y() + dragonBox.height() + 1;
         // Low enough to read as "over the box" from the front or above, never inside the walls.
-        double y = top + 6 - 3 * Math.sin(Math.PI * progress) + Math.max(0, t - duration) * .5;
-        // An ender dragon's model faces opposite its yaw, so yaw 90 makes it face +X (east).
-        return new Location(world, x, y, dragonBox.z() + .5, 90, 0);
+        double y = top + 4 - 1.5 * Math.sin(Math.PI * progress) + Math.max(0, t - duration) * .5;
+        // Flying +X (east) is yaw -90 in Bukkit terms. v2.7.0/2.7.1 used 90 and the dragon flew tail-first on a real client,
+        // so the model's head follows the yaw direction. effects.clear-dragon-yaw-offset can flip it by 180 without a rebuild.
+        return new Location(world, x, y, dragonBox.z() + .5, -90f + settings.clearDragonYawOffset(), 0);
     }
     /** Keep the whole flight lane loaded, or the dragon would freeze or vanish once it leaves the box's pinned chunks. */
     private void pinDragonPath() {
@@ -419,7 +420,7 @@ public final class UmetateGame implements Listener, FrameArena {
         if (dragonTick % 10 == 0) world.playSound(at, "minecraft:entity.ender_dragon.flap", 2f, .9f);
         // Even if the model is out of sight, the trail makes the pass visible. It follows the head, where the columns vanish.
         Location head = at.clone().add(DRAGON_HEAD, 0, 0);
-        if (dragonTick % 2 == 0) world.spawnParticle(Particle.DRAGON_BREATH, head, 25, 2, 1.5, 3, .02,
+        if (dragonTick % 2 == 0) world.spawnParticle(Particle.DRAGON_BREATH, head, 6, 1.5, 1, 2, .02,
             Particle.DRAGON_BREATH.getDataType() == Float.class ? (Object) 1f : null, true);
         world.spawnParticle(Particle.END_ROD, head, 6, .3, .6, 1.5, .02, null, true);
         int maxX = box.x() + box.radius() - 1;
@@ -435,18 +436,20 @@ public final class UmetateGame implements Listener, FrameArena {
         }
     }
     private void clearColumn(int x) {
-        BlockData air = data(Material.AIR); int r = box.radius();
+        BlockData air = data(Material.AIR); int r = box.radius(); BlockData debris = null;
         for (int y = box.y() + 1; y <= box.y() + box.height(); y++)
             for (int z = box.z() - r + 1; z < box.z() + r; z++) {
                 Block b = world.getBlockAt(x, y, z); Material type = b.getType();
                 if (type.isAir() || tileGuard.isTile(type)) continue;
+                if (debris == null || (y + z) % 7 == 0) debris = b.getBlockData();
                 b.setBlockData(air, false); update(box.index(x, y, z), b);
             }
         double top = box.y() + box.height() + .5, mid = box.y() + (box.height() + 1) / 2.0;
-        // Newer versions give dragon breath a Float "power"; older ones take no data.
-        world.spawnParticle(Particle.DRAGON_BREATH, new Location(world, x + .5, mid, box.z() + .5), 40, .3, box.height() / 3.0, r / 2.0, .02,
-            Particle.DRAGON_BREATH.getDataType() == Float.class ? (Object) 1f : null);
-        world.spawnParticle(Particle.FLAME, new Location(world, x + .5, top, box.z() + .5), 15, .2, .2, r / 2.0, .03);
+        // Chewed-up debris of the real blocks along the whole column, so the advancing cut face reads clearly.
+        if (debris != null) world.spawnParticle(Particle.BLOCK, new Location(world, x + .5, mid, box.z() + .5), 80, .4, box.height() / 2.5, r / 1.5, .05, debris, true);
+        world.spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, new Location(world, x + .5, top, box.z() + .5), 4, .2, .3, r / 2.0, .02, null, true);
+        world.spawnParticle(Particle.FLAME, new Location(world, x + .5, top, box.z() + .5), 8, .2, .2, r / 2.0, .03);
+        world.playSound(new Location(world, x + .5, mid, box.z() + .5), "minecraft:block.stone.break", 1.2f, .6f + random.nextFloat() * .3f);
         if ((x - box.x()) % 4 == 0) {
             world.spawnParticle(Particle.EXPLOSION, new Location(world, x + .5, top, box.z() + .5), 3, .5, .5, r / 2.0, 0);
             world.playSound(new Location(world, x + .5, top, box.z() + .5), "minecraft:entity.generic.explode", 1f, .7f);

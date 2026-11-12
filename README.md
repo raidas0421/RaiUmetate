@@ -125,7 +125,7 @@ OBSのHTMLとプロトコルは変更しません。既定では無効、ポー�
 | `/umetate fillblock <個数>` | 指定個数を直接配置 |
 | `/umetate fillfoun [層数]` | 全体／指定層数分を噴水で追加 |
 | `/umetate fillblockfoun <個数>` | 指定個数を噴水で追加 |
-| `/umetate clear [1/2]` | 箱の中を空にする。既定はエンダードラゴンが手前から現れて箱の上を通過し、通った列から消える（`effects.clear-dragon`。通過は幅によらず約10秒＝`effects.clear-dragon-seconds`。消える列はドラゴンの頭（口）の位置に合わせて進む）。`1` は即時、`2` はドラゴン |
+| `/umetate clear [1/2]` | 箱の中を空にする。既定はエンダードラゴンが手前から現れて箱の上を通過し、通った列から消える（`effects.clear-dragon`。通過は幅によらず約8秒＝`effects.clear-dragon-seconds`。消える列はドラゴンの頭（口）の位置に合わせて進む）。`1` は即時、`2` はドラゴン |
 | `/umetate delete` | 箱を削除し作成前の地形に戻す |
 | `/umetate stop` | 勝利タイマーの自動開始を停止 |
 | `/umetate start` | 勝利タイマーを再開 |
