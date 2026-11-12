@@ -84,7 +84,7 @@ public record Settings(SizeRules sizes,
             bounded(c,"effects.max-chain-tnt",100,1,1000),
             finite(c.getDouble("effects.tnt-radius",3),3,1,20),finite(c.getDouble("effects.meteor-radius",8),8,1,20),finite(c.getDouble("effects.zeus-radius",10),10,1,20),finite(c.getDouble("effects.comet-radius",2.5),2.5,1,20),finite(c.getDouble("effects.blackhole-radius",12),12,1,20),
             c.getBoolean("effects.win-fireworks",true),c.getBoolean("effects.clear-dragon",true),
-            bounded(c,"effects.clear-dragon-seconds",9,3,60),bounded(c,"effects.max-alleys",20,1,50),bounded(c,"alley.blocks-per-second",4,1,200));
+            bounded(c,"effects.clear-dragon-seconds",10,3,60),bounded(c,"effects.max-alleys",20,1,50),bounded(c,"alley.blocks-per-second",4,1,200));
     }
     private static int bounded(ConfigurationSection c,String key,int fallback,int min,int max){return Math.clamp(c.getInt(key,fallback),min,max);}
     private static double finite(double value,double fallback,double min,double max){return Double.isFinite(value)?Math.clamp(value,min,max):fallback;}

@@ -591,7 +591,7 @@ class GameIntegrationTest {
             assertTrue(game.dragonClearing()); assertFalse(game.busy());
             verify(f.world).spawn(any(org.bukkit.Location.class),eq(org.bukkit.entity.EnderDragon.class),any(java.util.function.Consumer.class));
             // Default pass: clear-dragon-seconds (9) of flight from DRAGON_LEAD blocks before the box to DRAGON_LEAD past it.
-            int duration=9*20,first=(int)Math.ceil((double)UmetateGame.DRAGON_LEAD/(box.width()+2*UmetateGame.DRAGON_LEAD)*duration);
+            int duration=10*20,first=(int)Math.ceil((UmetateGame.DRAGON_LEAD-UmetateGame.DRAGON_HEAD)/(box.width()+2*UmetateGame.DRAGON_LEAD)*duration);
             for(int i=0;i<first-2;i++) invoke(game,"tick");
             assertEquals(box.capacity(),((FillState)get(game,"fill")).filled(),"nothing vanishes before the head arrives");
             // Columns go one at a time: part-way through the pass the box is neither full nor empty.

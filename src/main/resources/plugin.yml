@@ -1,5 +1,5 @@
 name: RaiUmetate
-version: '2.7.0'
+version: '2.7.1'
 main: jp.rai42.umetate.UmetatePlugin
 api-version: '26.1.2'
 description: 日本語の埋め立て妨害・噴水ブロック演出

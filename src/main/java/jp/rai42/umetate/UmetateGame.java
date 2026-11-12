@@ -132,7 +132,10 @@ public final class UmetateGame implements Listener, FrameArena {
     private Box dragonBox;
     private int dragonTick, dragonColumn;
     private String dragonName = "";
-    static final int DRAGON_LEAD = 24, DRAGON_TAIL = 40;
+    static final int DRAGON_LEAD = 32, DRAGON_TAIL = 40;
+    /** The dragon entity is positioned at its body; its head and mouth are about this far ahead (+X) of that point. */
+    static final double DRAGON_HEAD = 7;
+    private final Set<Chunk> dragonTickets = new HashSet<>();
     /** Ticks the head needs to fly from DRAGON_LEAD blocks before the box to DRAGON_LEAD blocks past it. */
     private int dragonDuration() { return settings.clearDragonSeconds() * 20; }
 
@@ -366,6 +369,7 @@ public final class UmetateGame implements Listener, FrameArena {
         if (!withDragon) { clearNow(); return; }
         require(); checkNoContainers(box.envelopeCells()); cleanupEffects();
         dragonBox = box; dragonTick = 0; dragonColumn = box.x() - box.radius() + 1; dragonName = name == null ? "" : name;
+        pinDragonPath();
         Location at = dragonAt(0);
         dragon = world.spawn(at, EnderDragon.class, d -> {
             d.setAI(false); d.setGravity(false); d.setPersistent(false); d.setInvulnerable(true); d.addScoreboardTag(TAG);
@@ -387,21 +391,40 @@ public final class UmetateGame implements Listener, FrameArena {
         // An ender dragon's model faces opposite its yaw, so yaw 90 makes it face +X (east).
         return new Location(world, x, y, dragonBox.z() + .5, 90, 0);
     }
+    /** Keep the whole flight lane loaded, or the dragon would freeze or vanish once it leaves the box's pinned chunks. */
+    private void pinDragonPath() {
+        int west = (dragonBox.x() - dragonBox.radius() - DRAGON_LEAD - 16) >> 4, east = (dragonBox.x() + dragonBox.radius() + DRAGON_LEAD + 16) >> 4;
+        int zc = dragonBox.z() >> 4;
+        for (int cx = west; cx <= east; cx++) for (int cz = zc - 1; cz <= zc + 1; cz++) {
+            Chunk c = world.getChunkAt(cx, cz);
+            // Only chunks this call newly pinned are released later; the box keeps its own tickets.
+            if (c != null && c.addPluginChunkTicket(plugin)) dragonTickets.add(c);
+        }
+    }
+    private void unpinDragonPath() { for (Chunk c : dragonTickets) c.removePluginChunkTicket(plugin); dragonTickets.clear(); }
     private void dragonTick() {
         if (dragonBox == null) return;
         if (dragonBox != box || frameHealth.isCollapsing() || structure != null || preparation != null) { stopDragon(); return; }
         dragonTick++;
         Location at = dragonAt(dragonTick);
         if (dragon != null) {
-            if (!dragon.isValid()) dragon = null; else { dragon.teleport(at); dragon.setVelocity(new Vector()); }
+            if (!dragon.isValid()) dragon = null;
+            else {
+                // Move by exactly one tick of the flight path and tell clients the heading too, so the pass is a smooth glide.
+                Location before = dragon.getLocation();
+                dragon.teleport(at);
+                dragon.setVelocity(new Vector(at.getX() - before.getX(), at.getY() - before.getY(), 0));
+            }
         }
         if (dragonTick % 10 == 0) world.playSound(at, "minecraft:entity.ender_dragon.flap", 2f, .9f);
-        // Even if the model is out of sight, the trail makes the pass visible.
-        if (dragonTick % 2 == 0) world.spawnParticle(Particle.DRAGON_BREATH, at, 25, 3, 1.5, 3, .02,
+        // Even if the model is out of sight, the trail makes the pass visible. It follows the head, where the columns vanish.
+        Location head = at.clone().add(DRAGON_HEAD, 0, 0);
+        if (dragonTick % 2 == 0) world.spawnParticle(Particle.DRAGON_BREATH, head, 25, 2, 1.5, 3, .02,
             Particle.DRAGON_BREATH.getDataType() == Float.class ? (Object) 1f : null, true);
+        world.spawnParticle(Particle.END_ROD, head, 6, .3, .6, 1.5, .02, null, true);
         int maxX = box.x() + box.radius() - 1;
         // Columns at or behind the head are cleared; one column per tick keeps each tick under ~1500 block changes.
-        while (dragonColumn <= maxX && at.getX() >= dragonColumn) {
+        while (dragonColumn <= maxX && head.getX() >= dragonColumn) {
             clearColumn(dragonColumn++);
             if (dragonColumn > maxX) { clock.tick(false); clock.resume(); tell("エンダードラゴンが箱の中を空にしました。" + named(dragonName)); }
         }
@@ -431,7 +454,7 @@ public final class UmetateGame implements Listener, FrameArena {
     }
     private void stopDragon() {
         if (dragon != null) dragon.remove();
-        dragon = null; dragonBox = null;
+        dragon = null; dragonBox = null; unpinDragonPath();
     }
     boolean dragonClearing() { return dragonBox != null; }
     void clearNow() {
