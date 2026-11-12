@@ -92,6 +92,8 @@ effects:
   clear-dragon-seconds: 8
   # ドラゴンの向きの補正（度）。頭が進行方向の逆を向いて見えるときは 180 にします。
   clear-dragon-yaw-offset: 0
+  # ai: ドラゴンのAIを有効にして飛ばす（クライアントで動きが見える。既定）。teleport: AIを切って位置だけ動かす旧方式（クライアントでは止まって見える）。
+  clear-dragon-mode: ai
   # お助けアレイ（/umetate alley）の同時数上限。
   max-alleys: 20
 

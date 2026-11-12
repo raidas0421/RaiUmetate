@@ -372,7 +372,9 @@ public final class UmetateGame implements Listener, FrameArena {
         pinDragonPath();
         Location at = dragonAt(0);
         dragon = world.spawn(at, EnderDragon.class, d -> {
-            d.setAI(false); d.setGravity(false); d.setPersistent(false); d.setInvulnerable(true); d.addScoreboardTag(TAG);
+            // With the AI switched off, a vanilla client stops interpolating the dragon (it freezes at the spawn point with fixed wings),
+            // so "ai" mode keeps the AI on. Its flight phase is pinned to HOVER and the per-tick teleport below owns the position.
+            d.setAI(settings.clearDragonAi()); d.setGravity(false); d.setPersistent(false); d.setInvulnerable(true); d.addScoreboardTag(TAG);
             // A dragon keeps its own flight phase even without AI and would fight the per-tick teleport; make it hold still instead.
             try { d.setPhase(EnderDragon.Phase.HOVER); } catch (RuntimeException ignored) {}
             if (!dragonName.isBlank()) { d.customName(Component.text(dragonName, NamedTextColor.LIGHT_PURPLE)); d.setCustomNameVisible(true); }
@@ -388,9 +390,9 @@ public final class UmetateGame implements Listener, FrameArena {
         double top = dragonBox.y() + dragonBox.height() + 1;
         // Low enough to read as "over the box" from the front or above, never inside the walls.
         double y = top + 4 - 1.5 * Math.sin(Math.PI * progress) + Math.max(0, t - duration) * .5;
-        // Flying +X (east) is yaw -90 in Bukkit terms. v2.7.0/2.7.1 used 90 and the dragon flew tail-first on a real client,
-        // so the model's head follows the yaw direction. effects.clear-dragon-yaw-offset can flip it by 180 without a rebuild.
-        return new Location(world, x, y, dragonBox.z() + .5, -90f + settings.clearDragonYawOffset(), 0);
+        // The dragon's own flight AI sets yaw = travel yaw + 180, so flying +X (east) is yaw 90. (v2.7.2's -90 was wrong.)
+        // effects.clear-dragon-yaw-offset can still flip it by 180 without a rebuild.
+        return new Location(world, x, y, dragonBox.z() + .5, 90f + settings.clearDragonYawOffset(), 0);
     }
     /** Keep the whole flight lane loaded, or the dragon would freeze or vanish once it leaves the box's pinned chunks. */
     private void pinDragonPath() {

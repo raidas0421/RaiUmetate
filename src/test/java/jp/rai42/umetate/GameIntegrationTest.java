@@ -662,6 +662,21 @@ class GameIntegrationTest {
         command.onCommand(sender,null,"umetate",new String[]{"alley","12345","太郎"});verify(game).alley(12345,"太郎");
         clearInvocations(game);command.onCommand(sender,null,"umetate",new String[]{"alley","0"});verify(game,never()).alley(anyInt(),any());
     }
+    @Test void dragonKeepsItsAiOnSoClientsInterpolateItsFlight() throws Exception {
+        try (var f = new FrameHealthTest.Fixture(directory,10000)) {
+            Box box=Box.restored(0,0,0,3,2); UmetateGame game=game(f,box);
+            for(int i=0;i<box.capacity();i++) f.types.put(box.cell(i),Material.DIAMOND_BLOCK);
+            invoke(game,"reconcileAll");drainChanges(game);
+            game.clear(true,"");
+            @SuppressWarnings("unchecked") var captor=org.mockito.ArgumentCaptor.forClass(java.util.function.Consumer.class);
+            verify(f.world).spawn(any(org.bukkit.Location.class),eq(org.bukkit.entity.EnderDragon.class),captor.capture());
+            var dragon=mock(org.bukkit.entity.EnderDragon.class);
+            @SuppressWarnings("unchecked") java.util.function.Consumer<org.bukkit.entity.EnderDragon> init=captor.getValue();init.accept(dragon);
+            // A NoAI dragon is frozen at its spawn point on the client, so the default mode must leave the AI on.
+            verify(dragon).setAI(true);verify(dragon,never()).setAI(false);
+            verify(dragon).setInvulnerable(true);verify(dragon).setPersistent(false);
+        }
+    }
     @Test void instantClearStillAvailable() throws Exception {
         try (var f = new FrameHealthTest.Fixture(directory,10000)) {
             Box box=Box.restored(0,0,0,2,1); UmetateGame game=game(f,box);
