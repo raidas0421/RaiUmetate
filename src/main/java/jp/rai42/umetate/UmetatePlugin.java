@@ -7,6 +7,8 @@ public final class UmetatePlugin extends JavaPlugin {
     private UmetateGame game;
     private WinService wins;
     private RaiLiveLink raiLive;
+    private Dopa dopa;
+    Dopa dopa() { return dopa; }
     public DoubleTimeManager doubleTimeService() { return game==null?null:game.doubleTime(); }
     public WinService winService() { return wins; }
     void requestWin(boolean win, WinService.Reason reason) {
@@ -55,7 +57,8 @@ public final class UmetatePlugin extends JavaPlugin {
             raiLive.start(this,getConfig().getInt("rai-live.state-interval-ticks",5),game::raiLiveState);
             getLogger().info("Win と状態を Rai Live（"+raiLiveUrl+"）へ送ります。");
         }
+        dopa=new Dopa(this,wins,()->raiLive);
         getLogger().info("埋め立て妨害を起動しました。 /umetate help");
     }
-    @Override public void onDisable() { if(raiLive!=null) raiLive.close(); if(wins!=null) wins.close(); if (game != null) game.close(); }
+    @Override public void onDisable() { if(dopa!=null) dopa.shutdown(); if(raiLive!=null) raiLive.close(); if(wins!=null) wins.close(); if (game != null) game.close(); }
 }

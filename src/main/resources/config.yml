@@ -133,3 +133,49 @@ double-time:
   sound:
     start: ''
     end: ''
+
+# ドパガチャ（/umetate dopa [名前]）。抽選はここで決め、結果を Rai Live へ合図 dia.dopa（unit=win）で送る（演出は Rai Live の /obs/dopa。win.sink が rlc のときだけ送る）
+# 当たると、命中の瞬間に Win 数を −win-delta（WinService 経由。win.sink が rlc なら Rai Live の /api/wins、source は RaiUmetate）。
+# 仕組みはパルクール・タワーディフェンスの dopa: と同じ。当たりの見せ方: 普通 / 先バレ（最初から虹）/ フリーズ（途中で止まって虹）/ 復活（煙のあとで急に始まる）。
+# 各色の期待度（その色の演出が出たときの当たりやすさ）: 青 10% / 緑 30% / 赤 80% / 虹 100%。演出が出るのは全体の約 3.5%（約 29 回に 1 回）。
+# 確率の表示は /umetate dopa info、抽選だけの試しは /umetate dopa sim [回数] [当たり率]（Win は減らさない）。設定の反映はサーバー再起動
+dopa:
+  # 使う演出（空にするとドパガチャが止まる）
+  enabled-reaches: [wither, tnt, ghast, ore, reel, creeper, warden]
+  # どの演出を出すかの重み（0 にするとその演出は出ない）
+  reach-weights:
+    wither: 1
+    tnt: 1
+    ghast: 1
+    dragon: 0
+    ore: 1
+    reel: 1
+    creeper: 1
+    warden: 1
+  # 当たる確率（固定）。1/100 のように分数でも、0.01 のような数字でも書ける
+  win-chance: 0.01
+  # 当たったときの Win −N
+  win-delta: 7
+  # 当たりの見せ方の重み（普通 先バレ フリーズ 復活）。先バレ・フリーズは必ず虹で終わる
+  win-kind-weights: [7, 1, 1, 1]
+  # 普通・復活の最後の色の重み（青 緑 赤 虹）
+  win-color-weights: [8, 10, 12, 2]
+  # 色が上がっていく演出で、最初からその色で始める割合。残りは青から上がっていく
+  start-final-rate: 0.5
+  # 演出つきハズレの色の重み（青 緑 赤 虹）。虹は 0。青・緑は短い演出、赤はリーチ
+  lose-color-weights: [73, 24, 3, 0]
+  # 演出ごとのハズレの重み（数は演出ごとに決まっている: wither 3 / tnt 3 / ghast 3 / dragon 2 / ore 2 / reel 2 / creeper 3 / warden 3）
+  reach-lose-weights:
+    wither: [1, 1, 1]
+    tnt: [1, 1, 1]
+    ghast: [1, 1, 1]
+    dragon: [1, 1]
+    ore: [1, 1]
+    reel: [1, 1]
+    creeper: [1, 1, 1]
+    warden: [1, 1, 1]
+  # ハズレのうち、画面の下に煙と音だけ出す「ふつうのハズレ」にする割合。残りが演出つきのハズレ
+  smoke-rate: 0.975
+  # 命中の瞬間に全員へ出すタイトル（&色コード。{n} は Win の減る数）
+  hit-title: '&6&lドパガチャ当たり！'
+  hit-subtitle: '&cWin −{n}'

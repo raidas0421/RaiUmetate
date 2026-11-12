@@ -62,6 +62,7 @@ public final class UmetateCommand implements TabExecutor {
         HELP.put("sizemin", "直径・高さを最小にする");
         HELP.put("salmon <数> [秒数] [威力] [名前]", "爆発シャケ（既定5秒・威力3）");
         HELP.put("alley <ブロック数> [名前]", "お助けアレイ（空きマスを下から埋める。残り0で消える）");
+        HELP.put("dopa [名前|info|sim [回数] [当たり率]]", "ドパガチャ（Rai Live の演出）。当たると命中の瞬間に Win −7（config の dopa.win-delta）。infoは確率の表示、simは抽選だけの試し（Winは減らさない）");
         HELP.put("sizereset", "枠を設定上の初期サイズに戻す（既定11・9）");
         HELP.put("set_main_user <プレイヤー名>", "コンソールからの操作対象を設定");
         HELP.put("remove_main_user", "操作対象を解除");
@@ -84,6 +85,7 @@ public final class UmetateCommand implements TabExecutor {
                 game.hp(sender, Arrays.copyOf(args, Math.min(fixed, args.length))); game.note("hp", name(args, fixed)); return true;
             }
             if (sub.equals("doubletime")) { doubleTime(sender,args); return true; }
+            if (sub.equals("dopa")) { dopa(sender, args); return true; }
             if (game.busy()) throw new IllegalArgumentException("箱の更新・枠の再生成中、または保存エラーで停止中です。しばらく待つかサーバーログを確認してください。");
             if (!sub.equals("create")) game.require();
             switch (sub) {
@@ -235,6 +237,24 @@ public final class UmetateCommand implements TabExecutor {
         try { double n = Double.parseDouble(text); if (!Double.isFinite(n) || n < min || n > max) throw new NumberFormatException(); return n; }
         catch (NumberFormatException e) { throw new IllegalArgumentException("強さは " + min + "～" + max + " で指定してください。"); }
     }
+    /** 箱が無くても動く（Win は WinService、演出は Rai Live）。 */
+    private void dopa(CommandSender sender, String[] args) {
+        String first = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "";
+        if (first.equals("info")) { for (String l : game.dopaService().info()) replyLegacy(sender, l); return; }
+        if (first.equals("sim")) {
+            int n = args.length > 2 ? integer(args, 2, 1, 10_000_000) : 10000;
+            Double chance = null;
+            if (args.length > 3) {
+                chance = Dopa.parseChance(args[3]);
+                if (chance == null || chance < 0 || chance > 1) throw new IllegalArgumentException("当たり率は 0～1 の数字か 1/10 の形で指定してください: " + args[3]);
+            }
+            for (String l : game.dopaService().sim(n, chance)) replyLegacy(sender, l);
+            return;
+        }
+        String who = name(args, 1);
+        game.dopa(who);
+        game.note("dopa", who);
+    }
     private String name(String[] args, int from) {
         String s = String.join(" ", Arrays.copyOfRange(args, Math.min(from, args.length), args.length)).replaceAll("[\\p{Cntrl}§]", "");
         return s.substring(0, Math.min(48, s.length()));
@@ -248,6 +268,9 @@ public final class UmetateCommand implements TabExecutor {
         HELP.entrySet().stream().skip((long) (page - 1) * 10).limit(10)
                 .forEach(e -> sender.sendMessage(Component.text("/umetate " + e.getKey() + " — " + e.getValue(), NamedTextColor.YELLOW)));
     }
+    private void replyLegacy(CommandSender s, String text) {
+        s.sendMessage(Component.text("[埋め立て] ", NamedTextColor.AQUA).append(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacyAmpersand().deserialize(text)));
+    }
     private void ok(CommandSender s, String text) { if (!(s instanceof Player)) reply(s, text); }
     private void reply(CommandSender s, String text) { s.sendMessage(Component.text("[埋め立て] " + text, NamedTextColor.AQUA)); }
     private void error(CommandSender s, String text) { s.sendMessage(Component.text("[埋め立て] " + text, NamedTextColor.RED)); }
@@ -258,6 +281,7 @@ public final class UmetateCommand implements TabExecutor {
         }
         List<String> choices = new ArrayList<>();
         if (args.length == 1) { choices.add("help"); HELP.keySet().forEach(k -> choices.add(k.split(" ")[0])); }
+        else if (args.length == 2 && args[0].equalsIgnoreCase("dopa")) choices.addAll(List.of("info", "sim"));
         else if(args.length==2 && args[0].equalsIgnoreCase("doubletime"))choices.addAll(List.of("start","stop","add","status"));
         else if(args.length==3 && args[0].equalsIgnoreCase("doubletime") && (args[1].equalsIgnoreCase("start") || args[1].equalsIgnoreCase("add")))choices.addAll(List.of("30","60","120"));
         else if (args.length == 2 && args[0].equalsIgnoreCase("timer")) choices.addAll(List.of("add", "reset", "5", "10", "15", "20"));

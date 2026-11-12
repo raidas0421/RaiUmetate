@@ -936,6 +936,14 @@ public final class UmetateGame implements Listener, FrameArena {
     private boolean near(Player p) { return box != null && p.getWorld().equals(world) && p.getLocation().distanceSquared(centre()) < Math.pow(box.radius() + 64, 2); }
     /** Log suffix naming who triggered an effect (e.g. a gifter passed by STE as {nickname}). */
     static String named(String name) { return name == null || name.isBlank() ? "" : "（" + name + "）"; }
+    /** ドパガチャ。2倍タイム中は他の妨害と同じく倍率の回数だけ抽選する。 */
+    void dopa(String name) {
+        doubleTime.launch("dopa", () -> {
+            Dopa d = plugin.dopa();
+            if (d == null || d.roll(name) == null) throw new IllegalArgumentException("ドパガチャは止まっています（config.yml の dopa.enabled-reaches）");
+        });
+    }
+    Dopa dopaService() { return plugin.dopa(); }
     void note(String action, String name) { if (name != null && !name.isBlank()) plugin.getLogger().info(action + named(name)); }
     private void tell(String message) {
         // Console only: operators drive the game from a terminal and the stream chat stays clean.

@@ -170,6 +170,7 @@ OBSのHTMLとプロトコルは変更しません。既定では無効、ポー�
 | `/umetate sizemin` | 直径・高さを最小にする |
 | `/umetate salmon <数> [秒数] [威力] [名前]` | 爆発シャケ（既定5秒・威力3） |
 | `/umetate alley <ブロック数> [名前]` | お助けアレイを召喚。箱の空きマスを下の段から順に既定1秒4個（`alley.blocks-per-second`）で埋め、残り0で消える。空きがなければ操作対象（なければ最寄り）のプレイヤーの頭上を浮遊し、空きができたら再開。層の素材・fill帳簿・重力は通常の設置と同じ経路。2倍タイム対応、同時 `effects.max-alleys`（既定20）体、ブロック数の上限なし（1～1億） |
+| `/umetate dopa [名前|info|sim [回数] [当たり率]]` | ドパガチャ（2.7.5 追加。箱が無くても動く）。抽選して Rai Live へ `dia.dopa`（`unit=win`、source は `RaiUmetate`）を送り、当たり（既定 1/100）なら命中の瞬間に Win −`dopa.win-delta`（既定 7。`win.sink` の `lose` で送る。rlc なら `/api/wins` に delta -7）。見せ方・色・確率は config の `dopa:`（パルクール・タワーディフェンスと同じ仕組み）。`info` は確率、`sim` は抽選だけの試し（Win は減らさない）。2倍タイム中は倍率の回数だけ抽選。合図は `win.sink: rlc` のときだけ送る。OBS は `http://127.0.0.1:4180/obs/dopa?volume=80` |
 | `/umetate sizereset` | 枠を設定上の初期サイズに戻す（既定11・9） |
 | `/umetate set_main_user <プレイヤー名>` | コンソールからの操作対象を設定 |
 | `/umetate remove_main_user` | 操作対象を解除 |
