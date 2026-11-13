@@ -191,8 +191,9 @@ mvn -ntp "-Dmaven.repo.local=C:\Users\rai42\AppData\Local\Temp\codex-m2" -f umet
 
 ## 妨害倍率タイム（2.1.0）
 
-- `/umetate doubletime start`：既定30秒・2倍で開始。
-- `/umetate doubletime start 60 3`：60秒・3倍。発動中は残り時間と倍率を置き換えます。
+- `/umetate doubletime start`：未発動なら既定30秒・2倍で開始。**発動中なら既定秒数を追加**（倍率は現在のまま）。
+- `/umetate doubletime start 60 3`：未発動なら60秒・3倍で開始。発動中は60秒を追加し、倍率の引数は無視して現在の倍率を維持します（最大秒数で頭打ち）。
+- `/umetate doubletime 60 3`：`start 60 3` の短縮形（同じ挙動）。
 - `/umetate doubletime add 30` / `add -10`：残り時間を増減。
 - `/umetate doubletime stop`：終了。`status`：状態表示。
 

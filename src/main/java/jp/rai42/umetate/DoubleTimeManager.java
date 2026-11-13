@@ -47,6 +47,15 @@ public final class DoubleTimeManager {
         remaining=total=seconds*20;multiplier=factor;publish();refresh();
         announce(true);Bukkit.getPluginManager().callEvent(new DoubleTimeStartEvent(factor,seconds));
     }
+    /** 未発動なら開始、発動中なら残り時間を追加（倍率は現在のものを維持）。開始したらtrue。 */
+    public boolean startOrExtend(int seconds,int factor){
+        mainThread();
+        if(isActive()){
+            if(seconds<1 || seconds>maxSeconds())throw new IllegalArgumentException("秒数は1～"+maxSeconds()+"です。");
+            extend(seconds);return false;
+        }
+        start(seconds,factor);return true;
+    }
     public void stop(Reason reason){
         mainThread();Objects.requireNonNull(reason);
         if(reason!=Reason.EXPIRED)pending.clear();

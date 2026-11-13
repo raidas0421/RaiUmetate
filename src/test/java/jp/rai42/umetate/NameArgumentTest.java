@@ -63,8 +63,8 @@ class NameArgumentTest {
         var manager = mock(DoubleTimeManager.class);
         when(game.doubleTime()).thenReturn(manager);when(manager.defaultSeconds()).thenReturn(30);when(manager.defaultMultiplier()).thenReturn(2);
         when(manager.maxSeconds()).thenReturn(600);when(manager.maxMultiplier()).thenReturn(10);
-        run("doubletime", "start", "太郎"); verify(manager).start(30, 2);
-        run("doubletime", "start", "60", "3", "太郎"); verify(manager).start(60, 3);
+        run("doubletime", "start", "太郎"); verify(manager).startOrExtend(30, 2);
+        run("doubletime", "start", "60", "3", "太郎"); verify(manager).startOrExtend(60, 3);
     }
     @Test void numericOptionalArgumentsAreReadBeforeTheName() {
         assertEquals(2, UmetateCommand.numbers(new String[]{"salmon", "3", "10", "4.5", "太郎"}, 2, 2));

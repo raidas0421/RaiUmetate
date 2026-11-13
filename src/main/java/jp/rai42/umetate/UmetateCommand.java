@@ -13,7 +13,7 @@ public final class UmetateCommand implements TabExecutor {
     private final UmetateGame game;
     private static final LinkedHashMap<String, String> HELP = new LinkedHashMap<>();
     static {
-        HELP.put("doubletime <start [秒] [倍率]|stop|add <秒>|status>", "妨害倍率タイマーを操作");
+        HELP.put("doubletime <start [秒] [倍率]|<秒> [倍率]|stop|add <秒>|status>", "妨害倍率タイマーを開始（発動中は秒を追加）/操作");
         HELP.put("create [直径] [高さ]", "現在位置に箱を作成（既定11・9）");
         HELP.put("fill [層数]", "全体／指定層数分を直接配置");
         HELP.put("fillblock <個数>", "指定個数を直接配置");
@@ -198,13 +198,22 @@ public final class UmetateCommand implements TabExecutor {
     }
     private void doubleTime(CommandSender sender,String[] args) {
         atLeast(args,2);DoubleTimeManager manager=game.doubleTime();
+        if(numbers(args,1,1)==1){startOrExtend(args,1);return;}
         switch(args[1].toLowerCase(Locale.ROOT)) {
-            case "start" -> {int n=numbers(args,2,2);manager.start(n>=1?integer(args,2,1,manager.maxSeconds()):manager.defaultSeconds(),n==2?integer(args,3,2,manager.maxMultiplier()):manager.defaultMultiplier());game.note("doubletime start",name(args,2+n));}
+            case "start" -> startOrExtend(args,2);
             case "stop" -> {manager.requireActive();manager.stop(DoubleTimeManager.Reason.STOPPED);game.note("doubletime stop",name(args,2));}
             case "add" -> {atLeast(args,3);manager.extend(integer(args,2,Integer.MIN_VALUE,Integer.MAX_VALUE));game.note("doubletime add",name(args,3));}
             case "status" -> reply(sender,manager.isActive()?"妨害"+manager.getMultiplier()+"倍タイム 残り "+manager.snapshot().remainingSeconds()+"秒":"妨害2倍タイムは発動していません");
-            default -> throw new IllegalArgumentException("doubletime start / stop / add / status を指定してください。");
+            default -> throw new IllegalArgumentException("doubletime start [秒] [倍率] / <秒> / stop / add / status を指定してください。");
         }
+    }
+    private void startOrExtend(String[] args,int from) {
+        DoubleTimeManager manager=game.doubleTime();
+        int n=numbers(args,from,2);
+        int seconds=n>=1?integer(args,from,1,manager.maxSeconds()):manager.defaultSeconds();
+        int factor=n==2?integer(args,from+1,2,manager.maxMultiplier()):manager.defaultMultiplier();
+        boolean started=manager.startOrExtend(seconds,factor);
+        game.note(started?"doubletime start":"doubletime start(add)",name(args,from+n));
     }
     private Player player(CommandSender sender) {
         if (sender instanceof Player p) return p;

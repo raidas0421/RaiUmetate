@@ -34,6 +34,16 @@ class DoubleTimeTest {
             assertEquals(DoubleTimeManager.Reason.EXPIRED,((DoubleTimeEndEvent)events.getValue()).getReason());
         }
     }
+    @Test void startOrExtendStartsWhenIdleAndAddsWhenActive() {
+        try(var f=new FrameHealthTest.Fixture(directory,10000)) {
+            var m=new DoubleTimeManager(f.plugin,()->f.world);
+            assertTrue(m.startOrExtend(30,3));assertEquals(600,m.getRemainingTicks());assertEquals(3,m.getMultiplier());
+            assertFalse(m.startOrExtend(20,5));assertEquals(1000,m.getRemainingTicks());assertEquals(3,m.getMultiplier());
+            assertFalse(m.startOrExtend(600,2));assertEquals(12000,m.getRemainingTicks());
+            assertThrows(IllegalArgumentException.class,()->m.startOrExtend(0,2));
+            m.stop(DoubleTimeManager.Reason.STOPPED);assertTrue(m.startOrExtend(10,2));assertEquals(200,m.getRemainingTicks());
+        }
+    }
     @Test void limitsInactiveOperationsAndOverflowAreSafe() {
         try(var f=new FrameHealthTest.Fixture(directory,10000)) {
             var m=new DoubleTimeManager(f.plugin,()->f.world);
@@ -138,6 +148,13 @@ class DoubleTimeTest {
             var command=new UmetateCommand(game);
             command.onCommand(f.console,null,"umetate",new String[]{"doubletime","start"});assertEquals(600,m.getRemainingTicks());
             command.onCommand(f.console,null,"umetate",new String[]{"doubletime","start","0","20"});assertEquals(600,m.getRemainingTicks());
+            command.onCommand(f.console,null,"umetate",new String[]{"doubletime","start","10","5"});assertEquals(800,m.getRemainingTicks());assertEquals(2,m.getMultiplier());
+            command.onCommand(f.console,null,"umetate",new String[]{"doubletime","10"});assertEquals(1000,m.getRemainingTicks());
+            command.onCommand(f.console,null,"umetate",new String[]{"doubletime","start"});assertEquals(1600,m.getRemainingTicks());
+            command.onCommand(f.console,null,"umetate",new String[]{"doubletime","stop"});assertFalse(m.isActive());
+            command.onCommand(f.console,null,"umetate",new String[]{"doubletime","20","4"});assertEquals(400,m.getRemainingTicks());assertEquals(4,m.getMultiplier());
+            command.onCommand(f.console,null,"umetate",new String[]{"doubletime","stop"});
+            command.onCommand(f.console,null,"umetate",new String[]{"doubletime","start"});
             command.onCommand(f.console,null,"umetate",new String[]{"doubletime","add","-30"});assertFalse(m.isActive());
             clearInvocations(f.console);
             for(String sub:List.of("stop","add"))command.onCommand(f.console,null,"umetate",sub.equals("add")?new String[]{"doubletime",sub,"5"}:new String[]{"doubletime",sub});
